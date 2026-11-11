@@ -89,7 +89,7 @@ def emotion_expression(state, event=None):
             print("呼~被摸摸头以后, tianbao感觉安心多啦.")
 
     # 3. 普通情绪表达
-    elif emotion == "calm":
+    if emotion == "calm":#这里之前是elif 但是会被 evnet截断只会走上面的sad或者touch下面都不会走了，所以event和emotionn应该是两个判断口
         print("唔~tianbao现在很安心, 陪着你就很舒服啦.")
 
     elif emotion == "happy":
