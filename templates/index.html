@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#f8f6f0">
+  <meta name="description" content="tianbao virtual V0.5 - 一个有情绪、会回应触摸的小小陪伴机器人.">
+  <title>tianbao virtual V0.5 | Interactive Companion</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2363b3a1'/%3E%3Ctext x='32' y='45' font-size='36' text-anchor='middle' fill='%23eefcf6'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css?v=0.5.1">
+  <script type="module" src="/static/app.js?v=0.5.1"></script>
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true">
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <div class="ambient ambient-three"></div>
+  </div>
+
+  <div class="app" id="appRoot">
+    <h1 class="visually-hidden">tianbao virtual - 小小陪伴机器人</h1>
+    <header class="topbar">
+      <div class="brand" aria-label="tianbao virtual V0.5">
+        <span class="brand-mark" aria-hidden="true">✦</span>
+        <span class="brand-name">tianbao</span>
+        <span class="brand-tag">virtual</span>
+        <span class="brand-version">V0.5</span>
+      </div>
+      <nav class="view-switch" role="tablist" aria-label="视图模式">
+        <button class="view-tab is-active" type="button" role="tab" data-view="robot" aria-selected="true">机器人</button>
+        <button class="view-tab" type="button" role="tab" data-view="iso" aria-selected="false">2.5D</button>
+        <button class="view-tab" type="button" role="tab" data-view="3d" aria-selected="false">3D <span class="view-tag">设计</span></button>
+      </nav>
+      <div class="topbar-actions">
+        <span id="offlineChip" class="offline-chip" hidden>后端离线</span>
+        <button id="debugOpen" class="debug-toggle" type="button"
+                aria-haspopup="dialog" aria-controls="debugPanel" aria-expanded="false">
+          <svg class="gear-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Zm8.2 4.6c0 .5-.1 1-.2 1.5l2 1.5-2 3.4-2.3-.9c-.8.6-1.7 1.1-2.6 1.4l-.3 2.4h-4l-.3-2.4c-1-.3-1.9-.8-2.6-1.4l-2.3.9-2-3.4 2-1.5c-.1-.5-.2-1-.2-1.5s.1-1 .2-1.5l-2-1.5 2-3.4 2.3.9c.8-.6 1.7-1.1 2.6-1.4l.3-2.4h4l.3 2.4c1 .3 1.9.8 2.6 1.4l2.3-.9 2 3.4-2 1.5c.1.5.2 1 .2 1.5Z"/>
+          </svg>
+          <span class="debug-toggle-text">控制台</span>
+          <span id="debugDot" class="debug-dot is-connecting" aria-hidden="true"></span>
+        </button>
+      </div>
+    </header>
+
+    <main class="scene" id="sceneRoot">
+      <div id="debugHud" class="debug-hud" hidden aria-live="polite">
+        <span class="hud-state"><i class="hud-dot" aria-hidden="true"></i><span id="hudMood">开心</span><b id="hudIntensity">60.0</b></span>
+        <span class="hud-sep" aria-hidden="true"></span>
+        <span id="hudMode" class="hud-mode">待机</span>
+        <span id="hudParams" class="hud-params">摸头 20 · 事件 35</span>
+        <span id="hudMove" class="hud-move" hidden>2.5D · 待机</span>
+      </div>
+
+      <div class="robot-stage" id="robotStage" data-expression="happy_mid" data-mood="happy">
+        <div class="stage-aura" aria-hidden="true"></div>
+        <div class="stage-ring ring-one" aria-hidden="true"></div>
+        <div class="stage-ring ring-two" aria-hidden="true"></div>
+        <span class="stage-sparkle sp1" aria-hidden="true">✦</span>
+        <span class="stage-sparkle sp2" aria-hidden="true">✧</span>
+        <span class="stage-sparkle sp3" aria-hidden="true">✦</span>
+
+        <div class="speech-bubble" id="speechBubble" role="status" aria-live="polite" aria-hidden="true">
+          <button id="bubbleClose" class="bubble-close" type="button" aria-label="关闭气泡">×</button>
+          <span id="bubbleLabel" class="bubble-label" hidden></span>
+          <p id="bubbleText" class="bubble-text"></p>
+        </div>
+
+        <svg class="robot-illustration" id="robotSvg" viewBox="0 0 360 340" role="group"
+             aria-label="tianbao 的虚拟机器人形象, 可以按住它的头摸摸它">
+          <defs>
+            <linearGradient id="bodyGradient" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#f9fbfc"/>
+              <stop offset="100%" stop-color="#bed9dc"/>
+            </linearGradient>
+            <linearGradient id="headGradient" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#fff"/>
+              <stop offset="100%" stop-color="#d7e8e9"/>
+            </linearGradient>
+            <linearGradient id="screenGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#28414d"/>
+              <stop offset="100%" stop-color="#142a37"/>
+            </linearGradient>
+            <linearGradient id="crownGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#ffe9ae"/>
+              <stop offset="100%" stop-color="#eec36f"/>
+            </linearGradient>
+            <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="8"/>
+            </filter>
+            <clipPath id="screenClip">
+              <rect x="68" y="76" width="224" height="142" rx="55"/>
+            </clipPath>
+          </defs>
+
+          <ellipse class="ground-shadow" cx="180" cy="309" rx="107" ry="12" fill="#8ea7a5" opacity=".21" filter="url(#shadow)"/>
+
+          <g class="robot-floating" id="robotFloating">
+            <g class="robot-body">
+              <rect x="47" y="154" width="54" height="92" rx="25" fill="#d7e8e9" transform="rotate(14 74 200)"/>
+              <rect x="259" y="154" width="54" height="92" rx="25" fill="#d7e8e9" transform="rotate(-14 286 200)"/>
+              <path d="M109 233 C115 197 142 184 180 184 C218 184 245 197 251 233 L258 278 C260 294 247 306 229 306 H131 C113 306 100 294 102 278 Z" fill="url(#bodyGradient)" stroke="#b7d5d9" stroke-width="3"/>
+              <rect x="140" y="228" width="80" height="54" rx="22" fill="#ecf7f6"/>
+              <circle cx="180" cy="253" r="13" fill="#9dd9d1"/>
+              <path d="M174 253 L179 258 L188 247" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+              <rect x="93" y="233" width="35" height="15" rx="8" fill="#d4e5e5" transform="rotate(15 110 240)"/>
+              <rect x="232" y="233" width="35" height="15" rx="8" fill="#d4e5e5" transform="rotate(-15 248 240)"/>
+            </g>
+
+            <g class="robot-head" id="robotHead">
+              <g class="head-motion" id="headMotion">
+                <rect x="150" y="31" width="60" height="48" rx="26" fill="#cadfe0"/>
+                <rect x="174" y="13" width="12" height="39" rx="6" fill="#dce9e7"/>
+                <circle class="antenna-light" cx="180" cy="14" r="14" fill="#f6c77f"/>
+                <circle cx="175" cy="9" r="5" fill="#fff" opacity=".65"/>
+
+                <rect class="head-glow" x="46" y="54" width="268" height="186" rx="76"
+                      fill="none" stroke="#bff0f0" stroke-width="10"/>
+
+                <rect x="52" y="60" width="256" height="174" rx="71" fill="url(#headGradient)" stroke="#a9cfd1" stroke-width="4"/>
+                <rect class="head-focus-ring" x="44" y="52" width="272" height="190" rx="84"
+                      fill="none" stroke="#63b3a1" stroke-width="2.5" stroke-dasharray="7 8"
+                      stroke-linecap="round"/>
+                <rect x="68" y="76" width="224" height="142" rx="55" fill="url(#screenGradient)"/>
+                <path d="M89 103 C107 90 139 90 157 97" fill="none" stroke="#fff" opacity=".1" stroke-width="11" stroke-linecap="round"/>
+                <ellipse cx="105" cy="162" rx="20" ry="11" fill="#f398aa" opacity=".35"/>
+                <ellipse cx="255" cy="162" rx="20" ry="11" fill="#f398aa" opacity=".35"/>
+
+                <g id="faceRig" clip-path="url(#screenClip)">
+                  <!-- 眼睛层: 同一时刻只点亮一组 -->
+                  <g class="eyes-gaze" id="eyesGaze">
+                    <g class="eyes-layer" id="eyesLayer">
+                      <g class="eye-style is-on" data-eye="open">
+                        <ellipse cx="128" cy="136" rx="9" ry="11.5" fill="#a8eef0"/>
+                        <ellipse cx="232" cy="136" rx="9" ry="11.5" fill="#a8eef0"/>
+                        <circle cx="131" cy="132" r="2.6" fill="#fff" opacity=".72"/>
+                        <circle cx="235" cy="132" r="2.6" fill="#fff" opacity=".72"/>
+                      </g>
+                      <g class="eye-style" data-eye="happy">
+                        <path d="M110 139 Q128 112 146 139 M214 139 Q232 112 250 139"
+                              stroke="#a8eef0" stroke-width="8.5" stroke-linecap="round" fill="none"/>
+                      </g>
+                      <g class="eye-style" data-eye="calm">
+                        <path d="M113 136 H145 M215 136 H247"
+                              stroke="#a8eef0" stroke-width="7" stroke-linecap="round"/>
+                      </g>
+                      <g class="eye-style" data-eye="soft">
+                        <path d="M112 137 Q128 129 145 137 M215 137 Q232 129 248 137"
+                              stroke="#a8eef0" stroke-width="6.5" stroke-linecap="round" fill="none"/>
+                      </g>
+                      <g class="eye-style" data-eye="sadSoft">
+                        <ellipse cx="128" cy="137" rx="8.5" ry="10.5" fill="#a8eef0" transform="rotate(7 128 137)"/>
+                        <ellipse cx="232" cy="137" rx="8.5" ry="10.5" fill="#a8eef0" transform="rotate(-7 232 137)"/>
+                        <circle cx="130" cy="133" r="2.2" fill="#fff" opacity=".55"/>
+                        <circle cx="234" cy="133" r="2.2" fill="#fff" opacity=".55"/>
+                      </g>
+                      <g class="eye-style" data-eye="sadHeavy">
+                        <path d="M114 130 C121 124 138 126 143 134 C136 143 121 143 114 130 Z" fill="#a8eef0"/>
+                        <path d="M217 134 C222 126 239 124 246 130 C239 143 224 143 217 134 Z" fill="#a8eef0"/>
+                        <circle cx="132" cy="131" r="2.2" fill="#fff" opacity=".5"/>
+                        <circle cx="228" cy="131" r="2.2" fill="#fff" opacity=".5"/>
+                      </g>
+                      <g class="eye-style" data-eye="squintSoft">
+                        <path d="M112 136 Q128 121 145 136 M215 136 Q232 121 248 136"
+                              stroke="#a8eef0" stroke-width="7" stroke-linecap="round" fill="none"/>
+                      </g>
+                      <g class="eye-style" data-eye="squint">
+                        <path d="M112 137 Q128 128 145 137 M215 137 Q232 128 248 137"
+                              stroke="#a8eef0" stroke-width="7.5" stroke-linecap="round" fill="none"/>
+                      </g>
+                      <g class="eye-style" data-eye="closed">
+                        <path d="M112 131 Q128 149 146 131 M214 131 Q232 149 250 131"
+                              stroke="#a8eef0" stroke-width="8" stroke-linecap="round" fill="none"/>
+                      </g>
+                      <g class="eye-style" data-eye="wide">
+                        <ellipse cx="128" cy="136" rx="10.5" ry="13.5" fill="#a8eef0"/>
+                        <ellipse cx="232" cy="136" rx="10.5" ry="13.5" fill="#a8eef0"/>
+                        <circle cx="132" cy="131" r="3.4" fill="#fff" opacity=".8"/>
+                        <circle cx="236" cy="131" r="3.4" fill="#fff" opacity=".8"/>
+                        <circle cx="125" cy="141" r="1.6" fill="#fff" opacity=".45"/>
+                        <circle cx="229" cy="141" r="1.6" fill="#fff" opacity=".45"/>
+                      </g>
+                      <g class="eye-style" data-eye="bright">
+                        <ellipse cx="128" cy="136" rx="11" ry="14" fill="#a8eef0"/>
+                        <ellipse cx="232" cy="136" rx="11" ry="14" fill="#a8eef0"/>
+                        <path d="M132 127 l1.6 4.2 4.2 1.6 -4.2 1.6 -1.6 4.2 -1.6 -4.2 -4.2 -1.6 4.2 -1.6 Z" fill="#fff" opacity=".95"/>
+                        <path d="M236 127 l1.6 4.2 4.2 1.6 -4.2 1.6 -1.6 4.2 -1.6 -4.2 -4.2 -1.6 4.2 -1.6 Z" fill="#fff" opacity=".95"/>
+                      </g>
+                      <g class="eye-style" data-eye="neutral">
+                        <ellipse cx="128" cy="136" rx="9" ry="12.5" fill="#a8eef0"/>
+                        <ellipse cx="232" cy="136" rx="9" ry="12.5" fill="#a8eef0"/>
+                        <circle cx="131" cy="131" r="2.8" fill="#fff" opacity=".7"/>
+                        <circle cx="235" cy="131" r="2.8" fill="#fff" opacity=".7"/>
+                        <path d="M218 119 Q232 115 246 119" stroke="#a8eef0" stroke-width="4"
+                              stroke-linecap="round" opacity=".6" fill="none"/>
+                      </g>
+                    </g>
+                  </g>
+
+                  <!-- 嘴巴层: 同一时刻只点亮一组 -->
+                  <g class="mouth-layer" id="mouthLayer">
+                    <g class="mouth-shape is-on" data-mouth-shape="smile">
+                      <path d="M165 169 Q180 180 195 169" stroke="#a8eef0" stroke-width="6" stroke-linecap="round" fill="none"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="grin">
+                      <path d="M153 167 Q180 193 207 167" stroke="#a8eef0" stroke-width="7" stroke-linecap="round" fill="none"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="laugh">
+                      <path d="M148 162 Q180 209 212 162 Q180 176 148 162 Z" fill="#a8eef0"/>
+                      <path d="M164 185 Q180 191 196 185" stroke="#f6b8c4" stroke-width="7" stroke-linecap="round" fill="none"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="calm">
+                      <path d="M166 168 Q180 175 194 168" stroke="#a8eef0" stroke-width="5" stroke-linecap="round" fill="none"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="frownSmall">
+                      <path d="M166 177 Q180 168 194 177" stroke="#a8eef0" stroke-width="5" stroke-linecap="round" fill="none"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="frown">
+                      <path d="M160 183 Q180 153 200 183" stroke="#a8eef0" stroke-width="7" stroke-linecap="round" fill="none"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="wail">
+                      <path d="M155 188 Q180 151 205 188" stroke="#a8eef0" stroke-width="9" stroke-linecap="round" fill="none"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="touchSoft">
+                      <path d="M164 168 Q180 181 196 168" stroke="#a8eef0" stroke-width="6" stroke-linecap="round" fill="none"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="touchEnjoy">
+                      <path d="M162 166 Q180 187 198 166" stroke="#a8eef0" stroke-width="6.5" stroke-linecap="round" fill="none"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="touchBliss">
+                      <path d="M166 168 Q180 190 194 168 Q180 174 166 168 Z" fill="#a8eef0"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="listenO">
+                      <ellipse cx="180" cy="173" rx="5.5" ry="6.5" fill="#a8eef0"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="listenFlat">
+                      <path d="M170 171 H190" stroke="#a8eef0" stroke-width="6" stroke-linecap="round"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="listenSmile">
+                      <path d="M161 166 Q180 191 199 166" stroke="#a8eef0" stroke-width="7" stroke-linecap="round" fill="none"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="zhuzhuMouth">
+                      <path d="M164 170 Q172 180 180 170 Q188 180 196 170" stroke="#a8eef0"
+                            stroke-width="6" stroke-linecap="round" fill="none"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="talk-a">
+                      <ellipse cx="180" cy="172" rx="8.5" ry="11.5" fill="#a8eef0"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="talk-o">
+                      <ellipse cx="180" cy="171" rx="7" ry="8" fill="#a8eef0"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="talk-e">
+                      <ellipse cx="180" cy="170" rx="11" ry="4.5" fill="#a8eef0"/>
+                    </g>
+                    <g class="mouth-shape" data-mouth-shape="talk-closed">
+                      <path d="M166 169 Q180 178 194 169" stroke="#a8eef0" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+                    </g>
+                  </g>
+
+                  <!-- 面部装饰层 -->
+                  <g class="fx fx-blush-soft">
+                    <ellipse cx="104" cy="160" rx="21" ry="11" fill="#f6a9b8" opacity=".38"/>
+                    <ellipse cx="256" cy="160" rx="21" ry="11" fill="#f6a9b8" opacity=".38"/>
+                  </g>
+                  <g class="fx fx-blush">
+                    <ellipse cx="103" cy="160" rx="23" ry="12" fill="#f59fb1" opacity=".55"/>
+                    <ellipse cx="257" cy="160" rx="23" ry="12" fill="#f59fb1" opacity=".55"/>
+                  </g>
+                  <g class="fx fx-brows-soft">
+                    <path d="M112 124 L144 117 M216 117 L248 124" stroke="#a8eef0" stroke-width="5"
+                          stroke-linecap="round" opacity=".7" fill="none"/>
+                  </g>
+                  <g class="fx fx-brows-strong">
+                    <path d="M110 122 L145 112 M215 112 L250 122" stroke="#a8eef0" stroke-width="7"
+                          stroke-linecap="round" fill="none"/>
+                  </g>
+                  <g class="fx fx-tears">
+                    <path class="tear tear-left" d="M107 150 C96 168 98 174 107 175 C116 173 117 162 107 150 Z" fill="#91d7e8"/>
+                    <path class="tear tear-right" d="M248 150 C233 172 237 183 249 184 C262 181 261 165 248 150 Z" fill="#91d7e8" opacity=".85"/>
+                  </g>
+                  <g class="fx fx-stars">
+                    <g transform="translate(92 103)"><path class="star star-a" d="M0 -6 L1.8 -1.8 L6 0 L1.8 1.8 L0 6 L-1.8 1.8 L-6 0 L-1.8 -1.8 Z" fill="#f8df9b"/></g>
+                    <g transform="translate(268 101)"><path class="star star-b" d="M0 -5 L1.5 -1.5 L5 0 L1.5 1.5 L0 5 L-1.5 1.5 L-5 0 L-1.5 -1.5 Z" fill="#ffd9e2"/></g>
+                  </g>
+                </g>
+              </g>
+            </g>
+
+            <!-- 临时交互特效层 -->
+            <g class="fx-layer" aria-hidden="true">
+              <g class="fx fx-hearts">
+                <g transform="translate(76 84)"><path class="heart h1" d="M0 4 C-4 -2 -12 -1 -12 5 C-12 11 -5 15 0 19 C5 15 12 11 12 5 C12 -1 4 -2 0 4 Z" fill="#f3a3b6"/></g>
+                <g transform="translate(292 76) scale(.78)"><path class="heart h2" d="M0 4 C-4 -2 -12 -1 -12 5 C-12 11 -5 15 0 19 C5 15 12 11 12 5 C12 -1 4 -2 0 4 Z" fill="#f6b7c6"/></g>
+                <g transform="translate(62 138) scale(.6)"><path class="heart h3" d="M0 4 C-4 -2 -12 -1 -12 5 C-12 11 -5 15 0 19 C5 15 12 11 12 5 C12 -1 4 -2 0 4 Z" fill="#f8c7d2"/></g>
+              </g>
+
+              <g class="fx fx-crown">
+                <g transform="translate(244 38) rotate(8)">
+                  <g class="crown-bob">
+                    <path d="M-16 10 L-16 -6 L-7 0 L0 -12 L7 0 L16 -6 L16 10 Z"
+                          fill="url(#crownGradient)" stroke="#e4b163" stroke-width="2" stroke-linejoin="round"/>
+                    <circle cx="-16" cy="-6" r="2.6" fill="#fff4d2"/>
+                    <circle cx="0" cy="-12" r="2.8" fill="#fff4d2"/>
+                    <circle cx="16" cy="-6" r="2.6" fill="#fff4d2"/>
+                  </g>
+                </g>
+              </g>
+
+              <g class="fx fx-sparkle-gold">
+                <g transform="translate(86 70)"><path class="spark sp-a" d="M0 -8 L2.4 -2.4 L8 0 L2.4 2.4 L0 8 L-2.4 2.4 L-8 0 L-2.4 -2.4 Z" fill="#f2cd85"/></g>
+                <g transform="translate(306 96)"><path class="spark sp-b" d="M0 -7 L2 -2 L7 0 L2 2 L0 7 L-2 2 L-7 0 L-2 -2 Z" fill="#ffd9e2"/></g>
+                <g transform="translate(98 172)"><path class="spark sp-c" d="M0 -5 L1.6 -1.6 L5 0 L1.6 1.6 L0 5 L-1.6 1.6 L-5 0 L-1.6 -1.6 Z" fill="#f6e3ae"/></g>
+              </g>
+
+              <g class="fx fx-pig">
+                <g transform="translate(318 120)">
+                  <g class="pig-snout">
+                    <ellipse rx="17" ry="13" fill="#f8c3ce" stroke="#eaa2b4" stroke-width="2"/>
+                    <ellipse cx="-5" cy="1" rx="3" ry="4.5" fill="#d98ba0"/>
+                    <ellipse cx="5" cy="1" rx="3" ry="4.5" fill="#d98ba0"/>
+                    <path d="M-10 -10 Q0 -17 10 -10" stroke="#eaa2b4" stroke-width="2" fill="none" stroke-linecap="round"/>
+                  </g>
+                </g>
+              </g>
+
+              <g class="fx fx-notes">
+                <g transform="translate(324 82) scale(.9)">
+                  <g class="note note-a">
+                    <path d="M0 14 V0 L11 -3 V10" stroke="#e9a9b7" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+                    <circle cx="-3.5" cy="15" r="4" fill="#e9a9b7"/>
+                    <circle cx="7.5" cy="11" r="4" fill="#e9a9b7"/>
+                  </g>
+                </g>
+                <g transform="translate(296 58) scale(.65)">
+                  <g class="note note-b">
+                    <path d="M0 14 V0 L11 -3 V10" stroke="#f0bdc8" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+                    <circle cx="-3.5" cy="15" r="4" fill="#f0bdc8"/>
+                    <circle cx="7.5" cy="11" r="4" fill="#f0bdc8"/>
+                  </g>
+                </g>
+              </g>
+
+              <g class="fx fx-wave-left">
+                <path class="wave wave-a" d="M42 124 Q30 150 42 176"/>
+                <path class="wave wave-b" d="M30 116 Q14 150 30 184"/>
+              </g>
+              <g class="fx fx-wave-right">
+                <path class="wave wave-a" d="M318 124 Q330 150 318 176"/>
+                <path class="wave wave-b" d="M330 116 Q346 150 330 184"/>
+              </g>
+              <g class="fx fx-speak">
+                <path class="wave wave-a" d="M319 154 Q327 166 319 178"/>
+                <path class="wave wave-b" d="M329 146 Q341 166 329 186"/>
+              </g>
+              <g class="fx fx-question">
+                <g class="question-bob">
+                  <text x="310" y="92" text-anchor="middle" font-size="34" font-weight="800" fill="#a8eef0">?</text>
+                </g>
+              </g>
+            </g>
+
+            <!-- 头部触摸热区: 覆盖头部但不覆盖气泡 -->
+            <rect id="headHotzone" x="38" y="0" width="284" height="246" rx="96"
+                  fill="transparent" pointer-events="all" tabindex="0" role="button"
+                  aria-keyshortcuts="Enter Space"
+                  aria-label="摸摸 tianbao 的头: 按住鼠标或触摸屏长按, 也可以按 Enter 键"/>
+          </g>
+        </svg>
+
+        <div id="touchHand" class="touch-hand" aria-hidden="true">
+          <svg viewBox="0 0 40 46">
+            <g fill="#ffd6c7" stroke="#e7a898" stroke-width="1.6" stroke-linejoin="round">
+              <rect x="6" y="23" width="24" height="17" rx="8.5"/>
+              <rect x="7" y="9" width="5.4" height="21" rx="2.7"/>
+              <rect x="13.4" y="6" width="5.4" height="24" rx="2.7"/>
+              <rect x="19.8" y="8" width="5.4" height="22" rx="2.7"/>
+              <rect x="26.2" y="13" width="5.4" height="17" rx="2.7"/>
+              <rect x="2" y="27" width="5.6" height="11" rx="2.8" transform="rotate(-30 4.8 32.5)"/>
+            </g>
+            <rect x="10" y="32" width="20" height="10" rx="5" fill="#9fd4cb" stroke="#7fbfb6" stroke-width="1.4"/>
+            <circle cx="13" cy="15" r="1.3" fill="#fff" opacity=".75"/>
+          </svg>
+        </div>
+
+        <p class="stage-hint" id="stageHint"><span aria-hidden="true">♡</span> 按住 tianbao 的小脑袋, 摸摸它</p>
+
+        <div class="voice-dock" id="voiceDock">
+          <button id="voiceToggle" class="voice-toggle" type="button" aria-pressed="false" aria-label="开始录音">
+            <span class="voice-pulse" aria-hidden="true"></span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-2.1A7 7 0 0 0 19 12h-2Z"/>
+            </svg>
+          </button>
+          <div class="voice-copy">
+            <span id="voiceStatus" class="voice-status">点一下麦克风, 对 tianbao 说句话</span>
+            <div class="voice-links">
+              <button id="voicePlayback" class="voice-link" type="button" hidden>回放我的录音</button>
+              <button id="voiceRetry" class="voice-link" type="button" hidden>再听一次回应</button>
+              <button id="voiceOpenPanel" class="voice-link" type="button">音色 / 语音包</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <section class="world-25d" id="world25d" hidden aria-label="tianbao 的 2.5D 小屋">
+        <div class="iso-room" aria-hidden="true">
+          <div class="iso-wall">
+            <div class="iso-window"><span class="iso-sky"></span><span class="iso-mullion v"></span><span class="iso-mullion h"></span></div>
+            <div class="iso-curtain curtain-left"></div>
+            <div class="iso-curtain curtain-right"></div>
+            <div class="iso-picture"><span></span></div>
+            <div class="iso-shelf"><i></i><i></i><i></i><i></i></div>
+            <div class="iso-clock"><i></i><b></b></div>
+            <div class="iso-console"><span class="console-vase"></span><span class="console-leaf"></span><span class="console-leaf two"></span></div>
+          </div>
+          <div class="iso-floor">
+            <div class="iso-floor-lines"></div>
+            <div class="iso-rug"></div>
+            <div class="iso-sofa">
+              <span class="sofa-back"></span><span class="sofa-seat"></span>
+              <span class="sofa-arm sofa-arm-left"></span><span class="sofa-arm sofa-arm-right"></span>
+            </div>
+            <div class="iso-table"><span></span></div>
+            <div class="iso-plant"><span class="pot"></span><span class="leaf leaf-a"></span><span class="leaf leaf-b"></span><span class="leaf leaf-c"></span></div>
+            <div class="iso-lamp"><span class="shade"></span><span class="stem"></span></div>
+          </div>
+          <div class="iso-light"></div>
+          <span class="iso-dust dust-a"></span>
+          <span class="iso-dust dust-b"></span>
+          <span class="iso-dust dust-c"></span>
+        </div>
+
+        <div class="iso-bubble" id="isoBubble" aria-hidden="true">
+          <span class="iso-bubble-label"></span>
+          <p class="iso-bubble-text"></p>
+        </div>
+
+        <div class="iso-entity" id="charEntity">
+          <div class="iso-shadow" id="charShadow"></div>
+          <div class="iso-char" id="char25d" data-mood="happy" tabindex="0" role="button" aria-label="按住摸摸 tianbao">
+            <div class="iso-char-flip" id="charFlip">
+              <div class="iso-char-bob">
+                <svg class="iso-char-svg" viewBox="0 0 160 200" aria-hidden="true">
+                  <rect x="77" y="12" width="6" height="30" rx="3" fill="#dce9e7"/>
+                  <circle cx="80" cy="11" r="9" fill="#f6c77f"/>
+                  <circle cx="77" cy="8" r="3" fill="#fff" opacity=".65"/>
+                  <g class="mini-leg mini-leg-l"><rect x="58" y="158" width="16" height="34" rx="8" fill="#d7e8e9"/></g>
+                  <g class="mini-leg mini-leg-r"><rect x="86" y="158" width="16" height="34" rx="8" fill="#d7e8e9"/></g>
+                  <path class="mini-body" d="M48 118 C48 110 56 106 80 106 C104 106 112 110 112 118 L116 160 C116 168 108 172 100 172 H60 C52 172 44 168 44 160 Z" fill="#eaf4f4" stroke="#b7d5d9" stroke-width="3"/>
+                  <circle cx="80" cy="136" r="9" fill="#9dd9d1"/>
+                  <path d="M76 136 L79 139 L85 132" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                  <g class="mini-arm mini-arm-l"><rect x="28" y="120" width="15" height="38" rx="7.5" fill="#d7e8e9" transform="rotate(10 35 139)"/></g>
+                  <g class="mini-arm mini-arm-r"><rect x="117" y="120" width="15" height="38" rx="7.5" fill="#d7e8e9" transform="rotate(-10 124 139)"/></g>
+                  <rect x="20" y="30" width="120" height="92" rx="32" fill="#f9fcfc" stroke="#a9cfd1" stroke-width="3.5"/>
+                  <rect x="32" y="42" width="96" height="68" rx="24" fill="#1e3441"/>
+                  <path d="M43 53 C52 47 66 47 75 50" stroke="#fff" opacity=".1" stroke-width="5" fill="none" stroke-linecap="round"/>
+                  <ellipse cx="47" cy="88" rx="10" ry="6" fill="#f398aa" opacity=".4"/>
+                  <ellipse cx="113" cy="88" rx="10" ry="6" fill="#f398aa" opacity=".4"/>
+
+                  <g class="mini-eye is-on" data-mini-eye="open">
+                    <ellipse cx="60" cy="72" rx="4.5" ry="6" fill="#a8eef0"/><ellipse cx="100" cy="72" rx="4.5" ry="6" fill="#a8eef0"/>
+                    <circle cx="62" cy="69" r="1.4" fill="#fff" opacity=".7"/><circle cx="102" cy="69" r="1.4" fill="#fff" opacity=".7"/>
+                  </g>
+                  <g class="mini-eye" data-mini-eye="happy">
+                    <path d="M52 75 Q60 63 68 75 M92 75 Q100 63 108 75" stroke="#a8eef0" stroke-width="5" stroke-linecap="round" fill="none"/>
+                  </g>
+                  <g class="mini-eye" data-mini-eye="calm">
+                    <path d="M54 72 H66 M94 72 H106" stroke="#a8eef0" stroke-width="4" stroke-linecap="round"/>
+                  </g>
+                  <g class="mini-eye" data-mini-eye="sad">
+                    <ellipse cx="60" cy="73" rx="4.5" ry="5.5" fill="#a8eef0" transform="rotate(8 60 73)"/>
+                    <ellipse cx="100" cy="73" rx="4.5" ry="5.5" fill="#a8eef0" transform="rotate(-8 100 73)"/>
+                    <path d="M52 63 L68 66 M92 66 L108 63" stroke="#a8eef0" stroke-width="2.6" stroke-linecap="round" opacity=".8"/>
+                  </g>
+                  <g class="mini-eye" data-mini-eye="squint">
+                    <path d="M53 72 Q60 66 67 72 M93 72 Q100 66 107 72" stroke="#a8eef0" stroke-width="4.4" stroke-linecap="round" fill="none"/>
+                  </g>
+                  <g class="mini-eye" data-mini-eye="closed">
+                    <path d="M52 70 Q60 81 68 70 M92 70 Q100 81 108 70" stroke="#a8eef0" stroke-width="4.4" stroke-linecap="round" fill="none"/>
+                  </g>
+                  <g class="mini-eye" data-mini-eye="wide">
+                    <ellipse cx="60" cy="71" rx="5.5" ry="7" fill="#a8eef0"/><ellipse cx="100" cy="71" rx="5.5" ry="7" fill="#a8eef0"/>
+                    <circle cx="62" cy="68" r="1.8" fill="#fff" opacity=".8"/><circle cx="102" cy="68" r="1.8" fill="#fff" opacity=".8"/>
+                  </g>
+                  <g class="mini-eye" data-mini-eye="bright">
+                    <ellipse cx="60" cy="71" rx="5.5" ry="7" fill="#a8eef0"/><ellipse cx="100" cy="71" rx="5.5" ry="7" fill="#a8eef0"/>
+                    <path d="M62 66 l.9 2.1 2.1.9 -2.1.9 -.9 2.1 -.9 -2.1 -2.1 -.9 2.1 -.9 Z" fill="#fff"/>
+                    <path d="M102 66 l.9 2.1 2.1.9 -2.1.9 -.9 2.1 -.9 -2.1 -2.1 -.9 2.1 -.9 Z" fill="#fff"/>
+                  </g>
+                  <g class="mini-eye" data-mini-eye="neutral">
+                    <ellipse cx="60" cy="72" rx="4.5" ry="6.5" fill="#a8eef0"/><ellipse cx="100" cy="72" rx="4.5" ry="6.5" fill="#a8eef0"/>
+                    <circle cx="62" cy="69" r="1.4" fill="#fff" opacity=".7"/><circle cx="102" cy="69" r="1.4" fill="#fff" opacity=".7"/>
+                    <path d="M94 61 Q100 59 106 61" stroke="#a8eef0" stroke-width="2.2" stroke-linecap="round" opacity=".65" fill="none"/>
+                  </g>
+
+                  <g class="mini-mouth is-on" data-mini-mouth="smile"><path d="M73 90 Q80 96 87 90" stroke="#a8eef0" stroke-width="3.4" stroke-linecap="round" fill="none"/></g>
+                  <g class="mini-mouth" data-mini-mouth="laugh"><path d="M71 88 Q80 102 89 88 Q80 94 71 88 Z" fill="#a8eef0"/></g>
+                  <g class="mini-mouth" data-mini-mouth="calm"><path d="M75 91 Q80 94 85 91" stroke="#a8eef0" stroke-width="3" stroke-linecap="round" fill="none"/></g>
+                  <g class="mini-mouth" data-mini-mouth="frown"><path d="M73 95 Q80 88 87 95" stroke="#a8eef0" stroke-width="3.2" stroke-linecap="round" fill="none"/></g>
+                  <g class="mini-mouth" data-mini-mouth="wail"><path d="M71 97 Q80 86 89 97" stroke="#a8eef0" stroke-width="4" stroke-linecap="round" fill="none"/></g>
+                  <g class="mini-mouth" data-mini-mouth="o"><ellipse cx="80" cy="93" rx="3.5" ry="4.5" fill="#a8eef0"/></g>
+                  <g class="mini-mouth" data-mini-mouth="flat"><path d="M75 92 H85" stroke="#a8eef0" stroke-width="3.2" stroke-linecap="round"/></g>
+                  <g class="mini-mouth" data-mini-mouth="w"><path d="M72 91 Q76 95 80 91 Q84 95 88 91" stroke="#a8eef0" stroke-width="3" stroke-linecap="round" fill="none"/></g>
+                  <g class="mini-mouth" data-mini-mouth="wide"><ellipse cx="80" cy="91" rx="6" ry="3" fill="#a8eef0"/></g>
+                  <g class="mini-mouth" data-mini-mouth="bliss"><path d="M74 90 Q80 97 86 90 Q80 93 74 90 Z" fill="#a8eef0"/></g>
+                </svg>
+              </div>
+            </div>
+            <div class="iso-hearts" aria-hidden="true"><span>♥</span><span>♥</span><span>♥</span></div>
+          </div>
+        </div>
+
+        <div class="iso-hint">WASD / 方向键移动 · 空格跳跃 · Shift 加速 · 按住 tianbao 摸摸它</div>
+
+        <div class="iso-controls">
+          <div class="iso-dpad" aria-label="移动方向">
+            <button type="button" class="iso-btn dpad-up" data-move="up" aria-label="向上">▲</button>
+            <button type="button" class="iso-btn dpad-left" data-move="left" aria-label="向左">◀</button>
+            <span class="dpad-center" aria-hidden="true">✥</span>
+            <button type="button" class="iso-btn dpad-right" data-move="right" aria-label="向右">▶</button>
+            <button type="button" class="iso-btn dpad-down" data-move="down" aria-label="向下">▼</button>
+          </div>
+          <div class="iso-actions">
+            <button type="button" class="iso-btn action-run" data-move-action="run" aria-pressed="false">跑</button>
+            <button type="button" class="iso-btn" data-move-action="jump">跳</button>
+            <button type="button" class="iso-btn" data-move-action="dash">冲</button>
+            <button type="button" class="iso-btn iso-mic" id="voiceToggle25d" aria-label="对 tianbao 说话">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-2.1A7 7 0 0 0 19 12h-2Z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="design-3d" id="design3d" hidden aria-label="3D 家庭场景设计预览">
+        <div class="design-card">
+          <div class="eyebrow">3D HOME SCENE · DESIGN PREVIEW</div>
+          <h2>让 tianbao 住进你的家</h2>
+          <p class="design-lead">3D 模式目前只完成概念与导入流程设计, 尚未接入渲染引擎. 目标是先支持导入户型图, 再逐步过渡到真实房间.</p>
+          <svg class="floorplan" viewBox="0 0 560 300" role="img" aria-label="户型导入设计草图">
+            <defs>
+              <linearGradient id="planBg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#f3f8f3"/><stop offset="100%" stop-color="#fbf5ed"/>
+              </linearGradient>
+            </defs>
+            <rect x="18" y="18" width="524" height="264" rx="18" fill="url(#planBg)" stroke="#d9e6df"/>
+            <g stroke="#dce8e2" stroke-width="1">
+              <path d="M18 108 H542 M18 198 H542 M146 18 V282 M286 18 V282 M418 18 V282"/>
+            </g>
+            <g fill="none" stroke="#7fae9f" stroke-width="3" stroke-linejoin="round">
+              <rect x="44" y="44" width="186" height="158" rx="6"/>
+              <rect x="230" y="44" width="176" height="100" rx="6"/>
+              <rect x="406" y="44" width="108" height="100" rx="6"/>
+              <rect x="230" y="144" width="284" height="104" rx="6"/>
+            </g>
+            <g fill="none" stroke="#e3b978" stroke-width="3">
+              <path d="M116 202 A24 24 0 0 1 140 178"/>
+              <path d="M300 144 A22 22 0 0 1 322 122"/>
+              <path d="M406 122 A20 20 0 0 1 426 102"/>
+            </g>
+            <g fill="#6a817b" font-size="13" font-weight="700" text-anchor="middle" font-family="inherit">
+              <text x="136" y="100">客厅</text>
+              <text x="318" y="94">卧室</text>
+              <text x="460" y="94">厨房</text>
+              <text x="372" y="200">走廊 / 餐厅</text>
+            </g>
+            <g>
+              <circle cx="338" cy="238" r="10" fill="#63b3a1"/>
+              <circle cx="338" cy="238" r="17" fill="none" stroke="#63b3a1" stroke-width="2" stroke-dasharray="3 4"/>
+              <path d="M338 238 C360 238 360 208 384 208" fill="none" stroke="#63b3a1" stroke-width="2.5" stroke-dasharray="5 5"/>
+            </g>
+            <text x="500" y="264" font-size="10" text-anchor="middle" fill="#a1b0aa">FLOOR PLAN / BLOCKOUT</text>
+          </svg>
+          <ol class="design-steps">
+            <li><b>01</b><span>导入户型图, 标定比例与朝向.</span></li>
+            <li><b>02</b><span>框选房间 / 门窗, 标记房间语义.</span></li>
+            <li><b>03</b><span>生成体块与家具, 规划 tianbao 的导航路径.</span></li>
+          </ol>
+          <p class="design-note">设计思路: 先做“户型图 → 体块”的通用管线, 真实扫描作为增强, 不作为第一版依赖.</p>
+
+          <div class="design-pet">
+            <div class="design-pet-copy">
+              <div class="eyebrow">3D INTERACTION PREVIEW</div>
+              <h3>摸摸 3D tianbao</h3>
+              <p>3D 场景尚未接入. 这里先预演“射线命中头部 → 摸头反馈”的交互: 按住按钮, 松手后会真实提交一次摸头.</p>
+              <button id="designPetButton" class="btn btn-primary" type="button">按住摸摸 3D tianbao</button>
+              <p id="designPetStatus" class="field-note">还没有摸摸.</p>
+            </div>
+            <div class="design-pet-avatar" id="designPetAvatar" data-pet="idle" data-mood="happy" aria-hidden="true">
+              <div class="design-head">
+                <span class="design-antenna"></span>
+                <span class="design-screen">
+                  <span class="design-eye left"></span>
+                  <span class="design-eye right"></span>
+                  <span class="design-mouth"></span>
+                  <span class="design-cheek left"></span>
+                  <span class="design-cheek right"></span>
+                </span>
+              </div>
+              <div class="design-pet-hearts"><span>♥</span><span>♥</span><span>♥</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footline">
+      <span>your tiny companion</span>
+      <span>made with care for tianbao ♡</span>
+    </footer>
+  </div>
+
+  <aside id="debugPanel" class="debug-panel" role="dialog"
+         aria-labelledby="debugTitle" aria-hidden="true" inert>
+    <header class="debug-header">
+      <div>
+        <div class="eyebrow">CONTROL CENTER</div>
+        <h2 id="debugTitle">阗宝控制台</h2>
+      </div>
+      <button id="debugClose" class="debug-close" type="button" aria-label="收起控制台">
+        <span>收起</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 5l7 7-7 7"/>
+        </svg>
+      </button>
+    </header>
+
+    <nav class="panel-tabs" role="tablist" aria-label="控制台模块">
+      <button class="panel-tab is-active" type="button" role="tab" data-panel-tab="debug" aria-selected="true" aria-controls="panelPaneDebug">调试</button>
+      <button class="panel-tab" type="button" role="tab" data-panel-tab="voice" aria-selected="false" aria-controls="panelPaneVoice">语音</button>
+      <button class="panel-tab" type="button" role="tab" data-panel-tab="action" aria-selected="false" aria-controls="panelPaneAction">动作</button>
+    </nav>
+
+    <div class="panel-hud" id="panelHud" aria-live="polite">
+      <span id="panelHudMood">开心 60.0</span>
+      <span id="panelHudMode">待机</span>
+      <span id="panelHudParams">摸头 20 · 事件 35</span>
+    </div>
+
+    <div class="debug-body" id="panelBody">
+      <div class="panel-pane" id="panelPaneDebug" data-panel-pane="debug" role="tabpanel">
+        <section class="debug-group state-group" aria-label="实时情绪状态">
+          <div class="group-heading">
+            <span>实时情绪</span>
+            <span class="live-badge"><i aria-hidden="true"></i> LIVE</span>
+          </div>
+          <div class="state-grid">
+            <div class="state-cell"><span class="state-key">情绪</span><strong id="dbgEmotion">--</strong></div>
+            <div class="state-cell"><span class="state-key">强度</span><strong id="dbgIntensity">--</strong></div>
+            <div class="state-cell"><span class="state-key">连接</span><strong id="dbgConnection" class="conn-text is-connecting">连接中</strong></div>
+            <div class="state-cell"><span class="state-key">同步</span><strong id="dbgSync">--:--:--</strong></div>
+          </div>
+          <p id="dbgDescription" class="dbg-description">正在读取 tianbao 的状态...</p>
+          <div class="dbg-meter" role="progressbar" aria-label="情绪强度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="dbgProgress">
+            <span id="dbgMeter"></span>
+          </div>
+          <div class="dbg-mode-row"><span>交互状态</span><strong id="dbgMode">待机</strong></div>
+          <p id="dbgLastEvent" class="dbg-last-event">最近事件: 暂无</p>
+        </section>
+
+        <details class="debug-group" open>
+          <summary>摸头调试 <span class="summary-hint">真实 API</span></summary>
+          <div class="group-body">
+            <div class="field-row">
+              <label for="touchSlider">摸头程度</label>
+              <span id="touchValue" class="value-chip">20</span>
+            </div>
+            <input id="touchSlider" type="range" min="1" max="30" step="1" value="20">
+            <div class="range-ends"><span>轻轻碰一下</span><span>亲昵摸摸头</span></div>
+            <p id="touchLevel" class="level-label">普通摸头 · 11-20</p>
+            <button id="touchButton" class="btn btn-primary" type="button">摸摸 tianbao</button>
+            <p class="field-note">前端动画测试, 不改变 Python 情绪.</p>
+            <div class="tier-buttons">
+              <button class="btn-chip" type="button" data-touch-sim="light">轻触</button>
+              <button class="btn-chip" type="button" data-touch-sim="medium">摸摸</button>
+              <button class="btn-chip" type="button" data-touch-sim="affectionate">亲昵</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="debug-group">
+          <summary>负面事件调试 <span class="summary-hint">真实 API</span></summary>
+          <div class="group-body">
+            <div class="field-row">
+              <label for="sadSlider">事件影响强度</label>
+              <span id="sadValue" class="value-chip">35</span>
+            </div>
+            <input id="sadSlider" type="range" min="0" max="100" step="1" value="35">
+            <div class="range-ends"><span>没有影响</span><span>影响很大</span></div>
+            <p id="sadLevel" class="level-label">普通负面事件 · 21-50</p>
+            <button id="sadButton" class="btn btn-secondary" type="button">触发模拟事件</button>
+          </div>
+        </details>
+
+        <details class="debug-group">
+          <summary>说话调试 <span class="summary-hint">前端模拟</span></summary>
+          <div class="group-body">
+            <label class="field-label" for="speakInput">请输入 tianbao 要说的话</label>
+            <textarea id="speakInput" maxlength="140" rows="3" placeholder="嘿嘿~今天终于又见到你啦!"></textarea>
+            <button id="speakButton" class="btn btn-primary" type="button">模拟 tianbao 说话</button>
+            <p class="field-note">口型与文字为前端模拟, 尚未接入真实 TTS 或麦克风.</p>
+          </div>
+        </details>
+
+        <details class="debug-group">
+          <summary>倾听调试 <span class="summary-hint">前端模拟</span></summary>
+          <div class="group-body">
+            <label class="field-label" for="listenSelect">模拟身份</label>
+            <select id="listenSelect">
+              <option value="environment">环境声音</option>
+              <option value="stranger">陌生人</option>
+              <option value="zhuzhu">猪猪</option>
+              <option value="zaizai">仔仔</option>
+            </select>
+            <label class="field-label" for="listenInput">听到的内容</label>
+            <textarea id="listenInput" maxlength="140" rows="3" placeholder="请输入听到的内容"></textarea>
+            <button id="listenButton" class="btn btn-primary" type="button">模拟听到声音</button>
+            <p class="field-note">身份仅用于前端模拟, 不代表真实声纹识别.</p>
+          </div>
+        </details>
+
+        <section class="debug-group" aria-label="模拟控制">
+          <div class="group-heading"><span>模拟控制</span></div>
+          <div class="control-buttons">
+            <button id="stopSimulation" class="btn btn-ghost" type="button">停止当前模拟</button>
+            <button id="restoreIdle" class="btn btn-ghost" type="button">恢复待机动画</button>
+          </div>
+          <p id="dbgError" class="dbg-error" role="alert" hidden></p>
+        </section>
+      </div>
+
+      <div class="panel-pane" id="panelPaneVoice" data-panel-pane="voice" role="tabpanel" hidden>
+        <section class="module-card">
+          <div class="module-heading"><span>让 tianbao 说话</span><span class="summary-hint">前端 TTS</span></div>
+          <p class="module-desc">输入文字, 选择音色, tianbao 会用对应声音说出来.</p>
+          <textarea id="ttsText" maxlength="160" rows="3" placeholder="例如: 今天也想和你待在一起呀~"></textarea>
+          <div id="timbreGrid" class="timbre-grid" role="listbox" aria-label="音色选择"></div>
+          <div class="control-buttons">
+            <button id="ttsSpeak" class="btn btn-primary" type="button">用这个音色说话</button>
+            <button id="ttsStop" class="btn btn-ghost" type="button">停止说话</button>
+          </div>
+          <p id="ttsStatus" class="field-note">当前音色: 软萌 · 使用设备语音合成.</p>
+        </section>
+
+        <section class="module-card">
+          <div class="module-heading"><span>声音输入</span><span class="summary-hint">真实录音</span></div>
+          <p id="voiceDebugStatus" class="level-label">麦克风尚未使用.</p>
+          <div class="control-buttons">
+            <button id="voiceDebugRecord" class="btn btn-primary" type="button">开始录音</button>
+            <button id="voiceDebugPlay" class="btn btn-ghost" type="button" disabled>回放录音</button>
+          </div>
+          <button id="voiceDebugRespond" class="btn btn-secondary" type="button">播放 tianbao 的占位回应</button>
+          <p class="field-note">当前仅实现录音、回放和占位 TTS. 手机端需 HTTPS 才能使用麦克风.</p>
+          <details class="voice-help">
+            <summary>Windows 麦克风 / 手机麦克风?</summary>
+            <p>Windows 本机: 在 Windows 浏览器打开 <b>http://localhost:5000</b> 或 <b>http://127.0.0.1:5000</b>, 浏览器会直接使用 Windows 麦克风, 不需要 HTTPS. 不要使用 WSL 的 172.x IP.</p>
+            <p>局域网手机: 浏览器要求 HTTPS, 需生成开发证书并用 HTTPS 入口访问. 详见 docs/https-lan-microphone.md.</p>
+          </details>
+        </section>
+
+        <section class="module-card">
+          <div class="module-heading"><span>音色与语音包</span><span class="summary-hint">4 内置音色</span></div>
+          <p class="module-desc">内置 4 种通用音色; 可联网下载/关闭语音包, 或保存自定义音色.</p>
+          <div id="voicePackList" class="pack-list"></div>
+          <div class="pack-download">
+            <input id="voicePackUrl" type="text" placeholder="语音包 manifest URL">
+            <button id="voicePackDownload" class="btn btn-primary" type="button">联网下载</button>
+          </div>
+          <button id="voicePackSample" class="btn-chip" type="button">下载示例语音包</button>
+          <p id="voicePackStatus" class="field-note">语音包目前提供 TTS 参数预设; 真实神经音色包接口已预留.</p>
+        </section>
+
+        <section class="module-card">
+          <div class="module-heading"><span>自定义音色</span><span class="summary-hint">本地保存</span></div>
+          <label class="field-label" for="customVoiceName">音色名称</label>
+          <input id="customVoiceName" type="text" maxlength="16" placeholder="例如: 小夜曲">
+          <label class="field-label" for="customVoiceBase">基础语音</label>
+          <select id="customVoiceBase"><option value="">默认系统语音</option></select>
+          <div class="field-row"><label for="customVoicePitch">音高</label><span id="customVoicePitchValue" class="value-chip">1.15</span></div>
+          <input id="customVoicePitch" type="range" min="0.6" max="1.6" step="0.01" value="1.15">
+          <div class="field-row"><label for="customVoiceRate">语速</label><span id="customVoiceRateValue" class="value-chip">1.00</span></div>
+          <input id="customVoiceRate" type="range" min="0.7" max="1.4" step="0.01" value="1.00">
+          <button id="customVoiceSave" class="btn btn-primary" type="button">保存音色</button>
+          <div id="customVoiceList" class="custom-list"></div>
+        </section>
+      </div>
+
+      <div class="panel-pane" id="panelPaneAction" data-panel-pane="action" role="tabpanel" hidden>
+        <section class="module-card">
+          <div class="module-heading"><span>2.5D 运动</span><span class="summary-hint">键盘 + 按钮</span></div>
+          <p id="actionModeNote" class="level-label">切换到 2.5D 小屋后可用.</p>
+          <button id="actionGotoIso" class="btn btn-primary" type="button">切换到 2.5D 小屋</button>
+          <div class="move-pad" aria-label="移动方向">
+            <button type="button" class="move-btn move-up" data-move="up" aria-label="向上">▲</button>
+            <button type="button" class="move-btn move-left" data-move="left" aria-label="向左">◀</button>
+            <span class="move-center" aria-hidden="true">✥</span>
+            <button type="button" class="move-btn move-right" data-move="right" aria-label="向右">▶</button>
+            <button type="button" class="move-btn move-down" data-move="down" aria-label="向下">▼</button>
+          </div>
+          <div class="move-actions">
+            <button id="moveJump" class="btn-chip" type="button" data-move-action="jump">跳跃</button>
+            <button id="moveDash" class="btn-chip" type="button" data-move-action="dash">冲刺</button>
+            <button id="moveRun" class="btn-chip" type="button" data-move-action="run" aria-pressed="false">加速跑</button>
+          </div>
+          <p id="moveStatus" class="level-label">x 50 · y 74 · 待机</p>
+          <p class="field-note">WASD / 方向键移动 · Space 跳跃 · Shift 长按加速, 轻点冲刺. 2.5D 场景里也可以直接按住 tianbao 摸摸它.</p>
+        </section>
+
+        <section class="module-card camera-card">
+          <div class="module-heading"><span>摄像头画面</span><span class="summary-hint">后续接入</span></div>
+          <div class="camera-placeholder">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h3l2-2h6l2 2h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            <p>摄像头预览将在后续接入.</p>
+          </div>
+          <button id="cameraButton" class="btn btn-ghost" type="button" disabled>开启摄像头预览</button>
+          <p class="field-note">后续将在这里接入摄像头画面、远程移动和动作预设.</p>
+        </section>
+      </div>
+    </div>
+
+    <footer class="debug-footer">
+      <span>数据源: Flask / emotion.py</span>
+      <span>V0.5</span>
+    </footer>
+  </aside>
+
+  <div id="touchHandIso" class="touch-hand touch-hand-iso" aria-hidden="true">
+    <svg viewBox="0 0 40 46">
+      <g fill="#ffd6c7" stroke="#e7a898" stroke-width="1.6" stroke-linejoin="round">
+        <rect x="6" y="23" width="24" height="17" rx="8.5"/>
+        <rect x="7" y="9" width="5.4" height="21" rx="2.7"/>
+        <rect x="13.4" y="6" width="5.4" height="24" rx="2.7"/>
+        <rect x="19.8" y="8" width="5.4" height="22" rx="2.7"/>
+        <rect x="26.2" y="13" width="5.4" height="17" rx="2.7"/>
+        <rect x="2" y="27" width="5.6" height="11" rx="2.8" transform="rotate(-30 4.8 32.5)"/>
+      </g>
+      <rect x="10" y="32" width="20" height="10" rx="5" fill="#9fd4cb" stroke="#7fbfb6" stroke-width="1.4"/>
+      <circle cx="13" cy="15" r="1.3" fill="#fff" opacity=".75"/>
+    </svg>
+  </div>
+
+  <noscript>
+    <p class="noscript-note">tianbao 需要 JavaScript 才能互动, 请启用浏览器的 JavaScript.</p>
+  </noscript>
+</body>
+</html>

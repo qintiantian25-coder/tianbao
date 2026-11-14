@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "breeze-pack",
+  "name": "示例 · 微风语音包",
+  "version": "1.0.0",
+  "description": "示例语音包: 用 TTS 参数预设提供两种轻柔音色. 真实神经音色包可在未来接入同一 manifest 接口.",
+  "voices": [
+    {
+      "id": "breeze-soft",
+      "name": "微风",
+      "description": "轻一点, 慢一点",
+      "rate": 0.96,
+      "pitch": 1.12,
+      "voiceHint": "zh"
+    },
+    {
+      "id": "breeze-night",
+      "name": "夜灯",
+      "description": "低一点, 像睡前说话",
+      "rate": 0.88,
+      "pitch": 0.94,
+      "voiceHint": "zh"
+    }
+  ]
+}
