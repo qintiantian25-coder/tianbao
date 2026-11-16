@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * tianbao virtual V0.5 - browser voice input/output.
+ * tianbao virtual V0.6 - browser voice input/output.
  *
  * Input: real microphone recording through MediaRecorder. The user can replay
  * their own recording. Output: a real browser TTS voice (SpeechSynthesis) for
@@ -330,7 +330,13 @@ export class VoiceController {
    * mouth animation and bubble; if TTS is unavailable, a timer keeps the
    * visual response alive for roughly the same duration.
    */
-  async speak(text = VOICE_RESPONSE_TEXT, profile = null) {
+  async speak(text = VOICE_RESPONSE_TEXT, profile = null, {
+    since = null,
+    onFirstSound = null,
+  } = {}) {
+    const startedAt = performance.now();
+    const decisionAt = Number.isFinite(Number(since)) ? Number(since) : startedAt;
+
     this.cancelSpeech();
     this.stopPlayback();
     this.error = "";
@@ -342,6 +348,15 @@ export class VoiceController {
       const chars = Array.from(String(text)).length;
       const fallbackMs = Math.max(2800, Math.min(10000, chars * 210 + 1000));
       let settled = false;
+      let firstSoundAt = 0;
+
+      const markFirstSound = () => {
+        if (firstSoundAt || settled || ticket !== this.speechTicket) return;
+        firstSoundAt = performance.now();
+        if (typeof onFirstSound === "function") {
+          try { onFirstSound(firstSoundAt - decisionAt); } catch { /* UI only */ }
+        }
+      };
 
       const settle = (ok) => {
         if (settled) return;
@@ -349,6 +364,14 @@ export class VoiceController {
         clearTimeout(fallbackTimer);
         this.speechFinish = null;
         this.utterance = null;
+        const finishedAt = performance.now();
+        this.lastSpeechMetrics = {
+          kind: "browser",
+          firstSoundMs: firstSoundAt ? firstSoundAt - decisionAt : null,
+          playbackMs: firstSoundAt ? finishedAt - firstSoundAt : null,
+          endToEndMs: finishedAt - decisionAt,
+          spoken: Boolean(ok) && ticket === this.speechTicket,
+        };
         if (ticket === this.speechTicket) {
           this.state = this.hasRecording ? "ready" : "idle";
           this.emit();
@@ -376,6 +399,7 @@ export class VoiceController {
         const voice = this.pickVoice(profile);
         if (voice) utterance.voice = voice;
         utterance.lang = (voice && voice.lang) || "zh-CN";
+        utterance.onstart = () => markFirstSound();
         utterance.onend = () => settle(true);
         utterance.onerror = () => settle(true);
 

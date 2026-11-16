@@ -86,4 +86,5 @@ if __name__ == "__main__":
         ssl_context=(str(CERT_PATH), str(KEY_PATH)),
         debug=False,
         use_reloader=False,
+        threaded=True,
     )

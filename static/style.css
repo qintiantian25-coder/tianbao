@@ -1,6 +1,7 @@
 /* ==========================================================================
-   tianbao virtual V0.5 - Interactive Companion
-   Layout, layered robot expression styles, touch effects, debug drawer.
+   tianbao virtual V0.6 - Interactive Companion
+   Layout, layered robot expression styles, touch effects, debug drawer,
+   remote multi-timbre voice selector and per-sentence timing.
    ========================================================================== */
 
 :root {
@@ -368,6 +369,31 @@ summary:focus-visible {
   transition: background .15s ease, color .15s ease;
 }
 .bubble-close:hover { background: #f3f0e8; color: #7d847e; }
+
+/* ---------- per-sentence timing line ---------- */
+
+.speech-metrics {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px dashed #ece6da;
+  color: #7f918a;
+  font-size: 9.5px;
+  font-weight: 650;
+  line-height: 1.55;
+  letter-spacing: .01em;
+  font-variant-numeric: tabular-nums;
+  white-space: normal;
+  word-break: break-word;
+}
+.speech-metrics[data-kind="remote"] { color: #548c7e; }
+.speech-metrics[data-kind="browser"] { color: #7b859c; }
+.speech-metrics[data-kind="fallback"] { color: #a3783f; }
+.iso-speech-metrics {
+  margin-top: 5px;
+  padding-top: 5px;
+  font-size: 8.5px;
+  line-height: 1.45;
+}
 
 /* ---------- robot svg ---------- */
 
@@ -1326,6 +1352,28 @@ textarea + .btn, select + .btn { margin-top: 10px; }
 }
 .voice-dock.is-recording .voice-status { color: #bd726a; }
 .voice-dock.has-error .voice-status { color: #b06a5d; }
+.tts-fallback-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #fdf3e3;
+  color: #a3783f;
+  font-size: 9px;
+  font-weight: 750;
+  line-height: 1.55;
+  white-space: nowrap;
+}
+.tts-fallback-notice::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: .7;
+}
 .voice-links { display: flex; gap: 10px; }
 .voice-link {
   border: 0;
@@ -2250,6 +2298,33 @@ textarea + .btn, select + .btn { margin-top: 10px; }
 .module-card .field-note { margin-top: 9px; }
 
 /* ---------- voice lab ---------- */
+
+.tts-service-badge {
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #eef1f6;
+  color: #7d879c;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  line-height: 1.4;
+  white-space: nowrap;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tts-service-badge[data-state="online"] { background: #e7f7ef; color: #3f8a78; }
+.tts-service-badge[data-state="offline"] { background: #fdf1e4; color: #a6763c; }
+.tts-service-badge[data-state="checking"] { background: #eef1f6; color: #7d879c; }
+#ttsVoiceSelect {
+  margin-bottom: 4px;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+}
+#ttsVoiceSelect option:disabled { color: #b2b0a8; }
+#ttsVoiceSelect optgroup { color: #7e8c87; font-weight: 700; }
+#ttsServiceDetail { word-break: break-word; }
 
 .timbre-grid {
   display: grid;

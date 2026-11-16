@@ -1,11 +1,16 @@
 "use strict";
 
-import { RobotView, baseExpressionFor } from "./robot-view.js?v=0.5.1";
-import { TouchController, touchLevelFor, touchAmountFor } from "./robot-touch.js?v=0.5.1";
-import { SpeechBubble } from "./bubble.js?v=0.5.1";
-import { World25D } from "./world25d.js?v=0.5.1";
-import { VoiceController, VOICE_RESPONSE_TEXT } from "./voice.js?v=0.5.1";
-import { VoiceLibrary } from "./voice-library.js?v=0.5.1";
+import { RobotView, baseExpressionFor } from "./robot-view.js?v=0.6.2";
+import { TouchController, touchLevelFor, touchAmountFor } from "./robot-touch.js?v=0.6.2";
+import { SpeechBubble } from "./bubble.js?v=0.6.2";
+import { World25D } from "./world25d.js?v=0.6.2";
+import { VoiceController, VOICE_RESPONSE_TEXT } from "./voice.js?v=0.6.2";
+import { VoiceLibrary } from "./voice-library.js?v=0.6.2";
+import {
+  RemoteTTSService,
+  loadTTSSelection,
+  saveTTSSelection,
+} from "./remote-tts.js?v=0.6.2";
 
 /* ==========================================================================
    DOM
@@ -100,6 +105,12 @@ const timbreGrid = $("timbreGrid");
 const ttsSpeak = $("ttsSpeak");
 const ttsStop = $("ttsStop");
 const ttsStatus = $("ttsStatus");
+const ttsVoiceSelect = $("ttsVoiceSelect");
+const ttsServiceBadge = $("ttsServiceBadge");
+const ttsServiceDetail = $("ttsServiceDetail");
+const ttsFallbackNotice = $("ttsFallbackNotice");
+const speechMetrics = $("speechMetrics");
+const isoSpeechMetrics = $("isoSpeechMetrics");
 const voicePackList = $("voicePackList");
 const voicePackUrl = $("voicePackUrl");
 const voicePackDownload = $("voicePackDownload");
@@ -188,7 +199,10 @@ robot.setBaseExpression(appState.baseExpression);
 robot.setExpression(appState.baseExpression, { force: true });
 
 const bubble = new SpeechBubble($("speechBubble"));
-bubble.onClose = () => updateLastEvent("气泡已关闭.");
+bubble.onClose = () => {
+  clearSpeechMetrics();
+  updateLastEvent("气泡已关闭.");
+};
 
 const world = new World25D({
   root: worldRoot,
@@ -216,6 +230,43 @@ const voice = new VoiceController({
   onChange: (snapshot) => renderVoiceUI(snapshot),
   onRecorded: (recording) => handleVoiceRecorded(recording),
 });
+
+const remoteTTS = new RemoteTTSService({
+  onChange: (snapshot) => {
+    // A successful status refresh means a service-level outage is over. Keep
+    // a per-request/playback failure visible until the next successful remote
+    // sentence, but do not leave "备用语音" on screen after the service is
+    // clearly back (and we are not in the middle of a fallback sentence).
+    if (snapshot.available && ttsRuntimeFallback && !voiceResponseActive) {
+      const failure = ttsRuntimeFallback;
+      if (failure.serviceLevel && performance.now() - failure.at > 1500) {
+        ttsRuntimeFallback = null;
+      }
+    }
+    syncTTSVoiceOptions();
+    renderTTSServiceStatus();
+    updateTtsStatus();
+  },
+});
+
+/**
+ * The saved choice survives reloads. The default is the server default voice
+ * (yujie_v1 when available); the browser voice remains one select away and is
+ * also the automatic fallback.
+ */
+let ttsSelection = loadTTSSelection() || {
+  mode: "remote",
+  remoteVoiceId: "",
+  localKey: voiceLibrary.getActiveVoice().key,
+};
+let ttsRuntimeFallback = null;
+let ttsOptionsSignature = "";
+// -Infinity (not 0): performance.now() starts near 0, so 0 would look like a
+// touch that just happened right after a reload.
+let lastTouchCompletedAt = -Infinity;
+let lastTTSFailureKey = "";
+let lastTTSFailureAt = 0;
+let speechMetricsToken = 0;
 
 /* ==========================================================================
    Interaction state machine
@@ -281,7 +332,9 @@ function cancelSimulation({ hideBubble = true, keepTouch = false } = {}) {
   }
   robot.stopTalking();
   voiceResponseActive = false;
+  remoteTTS.cancel();
   voice.cancelSpeech();
+  clearSpeechMetrics();
   if (voice.isRecording) voice.abortRecording();
 
   const mode = appState.interaction.mode;
@@ -322,6 +375,7 @@ function changeTouchLevel(level) {
 }
 
 function finishTouch({ amount, level, source = "robot" }) {
+  lastTouchCompletedAt = performance.now();
   if (activeTouchToken !== null) {
     endInteractionIfCurrent(activeTouchToken);
     activeTouchToken = null;
@@ -1150,20 +1204,312 @@ function handleVoiceRecorded({ durationMs }) {
 }
 
 function respondWithVoice() {
-  return respondWithText(VOICE_RESPONSE_TEXT, voiceLibrary.getActiveVoice());
+  return respondWithText(VOICE_RESPONSE_TEXT);
 }
 
-async function respondWithText(text, timbre) {
+/* ---------------- speech timing + remote fallback ---------------- */
+
+function formatSpeechSeconds(ms) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value < 0) return "—";
+  return `${(value / 1000).toFixed(2)}s`;
+}
+
+function setSpeechMetricsText(text, {
+  kind = "",
+  title = "",
+  token = speechMetricsToken,
+} = {}) {
+  if (token !== speechMetricsToken) return;
+  for (const element of [speechMetrics, isoSpeechMetrics]) {
+    if (!element) continue;
+    element.hidden = !text;
+    element.textContent = text;
+    if (kind) element.dataset.kind = kind;
+    else element.removeAttribute("data-kind");
+    if (title) element.title = title;
+    else element.removeAttribute("title");
+  }
+}
+
+function clearSpeechMetrics() {
+  speechMetricsToken += 1;
+  for (const element of [speechMetrics, isoSpeechMetrics]) {
+    if (!element) continue;
+    element.hidden = true;
+    element.textContent = "";
+    element.removeAttribute("title");
+    element.removeAttribute("data-kind");
+  }
+}
+
+function remoteMetricsText(metrics, { phase = "done" } = {}) {
+  const bits = [
+    `生成 ${formatSpeechSeconds(metrics.generateMs)}`,
+    `首声 ${formatSpeechSeconds(metrics.firstSoundMs)}`,
+    `缓存 ${metrics.cache || "—"}`,
+    phase === "done" ? `播放 ${formatSpeechSeconds(metrics.playbackMs)}` : "播放中",
+  ];
+  return bits.join(" · ");
+}
+
+function browserMetricsText(metrics, { phase = "done", fallback = false } = {}) {
+  const bits = [
+    fallback ? "备用语音" : "浏览器语音",
+    `首声 ${formatSpeechSeconds(metrics.firstSoundMs)}`,
+    phase === "done" ? `播放 ${formatSpeechSeconds(metrics.playbackMs)}` : "播放中",
+  ];
+  return bits.join(" · ");
+}
+
+function showRemoteMetrics(metrics, { phase = "done", token = speechMetricsToken } = {}) {
+  const titleBits = [];
+  if (Number.isFinite(metrics.generateMs)) {
+    titleBits.push(`服务端推理 ${formatSpeechSeconds(metrics.generateMs)}`);
+  }
+  if (Number.isFinite(metrics.serverTotalMs)) {
+    titleBits.push(`服务端总耗时 ${formatSpeechSeconds(metrics.serverTotalMs)}`);
+  }
+  if (Number.isFinite(metrics.requestMs)) {
+    titleBits.push(`WAV 就绪 ${formatSpeechSeconds(metrics.requestMs)}`);
+  }
+  if (Number.isFinite(metrics.endToEndMs)) {
+    titleBits.push(`端到端 ${formatSpeechSeconds(metrics.endToEndMs)}`);
+  }
+  if (Number.isFinite(metrics.bytes)) {
+    titleBits.push(`${Math.round(metrics.bytes / 1024)} KB`);
+  }
+  titleBits.push("生成 = 服务端推理; 首声 = 从决定朗读到实际出声 (含请求/解码)");
+  setSpeechMetricsText(remoteMetricsText(metrics, { phase }), {
+    kind: "remote",
+    title: titleBits.join(" · "),
+    token,
+  });
+}
+
+function showBrowserMetrics(metrics, {
+  phase = "done",
+  fallback = false,
+  token = speechMetricsToken,
+  note = "",
+} = {}) {
+  const titleBits = ["首声 = 从决定朗读到浏览器语音开始 (含远程失败等待)"];
+  if (Number.isFinite(metrics.endToEndMs)) {
+    titleBits.push(`端到端 ${formatSpeechSeconds(metrics.endToEndMs)}`);
+  }
+  if (!voice.snapshot().speechSupported) {
+    titleBits.push("当前浏览器没有可用的语音合成引擎, 仅显示文字");
+  }
+  if (note) titleBits.push(note);
+  setSpeechMetricsText(browserMetricsText(metrics, { phase, fallback }), {
+    kind: fallback ? "fallback" : "browser",
+    title: titleBits.join(" · "),
+    token,
+  });
+}
+
+/**
+ * Existing emotion state -> the four emotions supported by the voice service:
+ * sad => comfort, calm => neutral, happy => happy, a recent head touch => shy.
+ */
+function ttsEmotionForSpeech() {
+  if (appState.backend.emotion === "sad") return "comfort";
+  if (appState.backend.emotion === "calm") return "neutral";
+  if (performance.now() - lastTouchCompletedAt < 15000) return "shy";
+  return "happy";
+}
+
+function selectedRemoteVoiceId() {
+  if (ttsSelection.remoteVoiceId) return ttsSelection.remoteVoiceId;
+  const preferred = remoteTTS.voices.find(
+    (voice) => voice.id === remoteTTS.defaultVoiceId && voice.available
+  );
+  if (preferred) return preferred.id;
+  const firstAvailable = remoteTTS.voices.find((voice) => voice.available);
+  if (firstAvailable) return firstAvailable.id;
+  // Before /voices has loaded (or when the list is unavailable), keep the
+  // server's default id so the next sentence can still try it.
+  return remoteTTS.defaultVoiceId || "";
+}
+
+function remoteVoiceName(voiceId) {
+  const found = remoteTTS.getVoice(voiceId);
+  return found ? found.name : (voiceId || "服务器默认音色");
+}
+
+function resolveSpeechPlan() {
+  const local = voiceLibrary.getActiveVoice();
+  if (ttsSelection.mode !== "remote") {
+    return { mode: "local", local, fallback: false, unavailableReason: "" };
+  }
+
+  const voiceId = selectedRemoteVoiceId();
+  const remoteVoice = voiceId ? remoteTTS.getVoice(voiceId) : null;
+  let unavailableReason = "";
+  if (!voiceId) {
+    unavailableReason = "尚未选择服务器音色";
+  } else if (remoteVoice && !remoteVoice.available) {
+    unavailableReason = remoteVoice.reason || "服务器标记该音色不可用";
+  }
+
+  return {
+    mode: "remote",
+    voiceId,
+    remoteVoice,
+    local,
+    fallback: Boolean(unavailableReason),
+    unavailableReason,
+  };
+}
+
+function setTTSRuntimeFallback(error) {
+  const message = error && error.message ? error.message : "远程语音不可用";
+  const code = error && error.code ? error.code : "remote";
+  const status = error && Number.isFinite(Number(error.status)) ? Number(error.status) : null;
+  const serviceLevel = !remoteTTS.available
+    || code === "network"
+    || code === "timeout"
+    || code === "json"
+    || (code === "http" && Number(status) >= 500);
+  ttsRuntimeFallback = { message, code, status, serviceLevel, at: performance.now() };
+  renderTTSServiceStatus();
+  updateTtsStatus();
+
+  const key = `${code}:${message}`;
+  const now = performance.now();
+  // The debug log is not a popup; even so, do not repeat the same failure
+  // more than once every 30 seconds.
+  if (key !== lastTTSFailureKey || now - lastTTSFailureAt > 30000) {
+    lastTTSFailureKey = key;
+    lastTTSFailureAt = now;
+    updateLastEvent(`远程语音失败, 已切换备用语音: ${message}`);
+  }
+
+  // Refresh immediately so the panel reflects reality instead of waiting for
+  // the next 15-second poll.
+  remoteTTS.refresh({ force: true });
+}
+
+function clearTTSRuntimeFallback() {
+  if (!ttsRuntimeFallback) return;
+  ttsRuntimeFallback = null;
+  renderTTSServiceStatus();
+  updateTtsStatus();
+}
+
+async function speakWithBrowser(clean, plan, token, decisionAt, {
+  fallback = false,
+  note = "",
+} = {}) {
+  const timbre = plan.local || voiceLibrary.getActiveVoice();
+  setSpeechMetricsText(
+    fallback ? "备用语音准备中..." : "浏览器语音准备中...",
+    {
+      kind: fallback ? "fallback" : "browser",
+      title: note,
+      token,
+    }
+  );
+
+  const spoken = await voice.speak(clean, timbre, {
+    since: decisionAt,
+    onFirstSound: (firstSoundMs) => {
+      showBrowserMetrics(
+        { firstSoundMs },
+        { phase: "first", fallback, token, note }
+      );
+    },
+  });
+
+  if (!spoken) return false;
+  const metrics = voice.lastSpeechMetrics || {};
+  showBrowserMetrics(metrics, { phase: "done", fallback, token, note });
+  return true;
+}
+
+async function speakCurrentText(clean, emotion, token, plan) {
+  const decisionAt = performance.now();
+
+  if (plan.mode === "local") {
+    return speakWithBrowser(clean, plan, token, decisionAt, { fallback: false });
+  }
+
+  if (plan.fallback) {
+    setTTSRuntimeFallback(new Error(plan.unavailableReason || "所选服务器音色不可用"));
+    return speakWithBrowser(clean, plan, token, decisionAt, {
+      fallback: true,
+      note: plan.unavailableReason,
+    });
+  }
+
+  setSpeechMetricsText("远程语音生成中...", {
+    kind: "remote",
+    title: `音色 ${remoteVoiceName(plan.voiceId)}`,
+    token,
+  });
+
+  const result = await remoteTTS.speak(clean, {
+    voiceId: plan.voiceId,
+    emotion,
+    cache: true,
+    // If the service is currently known to be down, fail faster. The next
+    // sentence still tries again, so recovery is picked up immediately.
+    timeoutMs: remoteTTS.available ? 65000 : 12000,
+    onFirstSound: (firstSoundMs, metrics) => {
+      showRemoteMetrics({ ...metrics, firstSoundMs }, { phase: "first", token });
+    },
+    onPhase: (phase) => {
+      if (phase === "requesting" || phase === "generating") {
+        setSpeechMetricsText("远程语音生成中...", {
+          kind: "remote",
+          title: `音色 ${remoteVoiceName(plan.voiceId)}`,
+          token,
+        });
+      } else if (phase === "ready") {
+        setSpeechMetricsText("WAV 已就绪 · 播放中...", { kind: "remote", token });
+      }
+    },
+  });
+
+  if (result.cancelled) return false;
+  if (result.ok) {
+    clearTTSRuntimeFallback();
+    showRemoteMetrics(result.metrics, { phase: "done", token });
+    updateLastEvent(
+      `远程语音 · ${remoteVoiceName(result.metrics.voiceId)} · 缓存 ${result.metrics.cache || "—"}`
+    );
+    return true;
+  }
+
+  setTTSRuntimeFallback(result.error);
+  return speakWithBrowser(clean, plan, token, decisionAt, {
+    fallback: true,
+    note: result.error && result.error.message,
+  });
+}
+
+async function respondWithText(text) {
   const clean = String(text || "").trim();
   if (!clean) return;
 
   cancelSimulation({ hideBubble: true });
+  clearSpeechMetrics();
+  const metricsToken = speechMetricsToken;
+
   const token = beginInteraction("speaking");
   const sim = ++simToken;
   voiceResponseActive = true;
-  updateLastEvent(`语音输出 · ${timbre ? timbre.name : "默认音色"}`);
 
-  const speechPromise = voice.speak(clean, timbre);
+  const plan = resolveSpeechPlan();
+  const emotion = ttsEmotionForSpeech();
+  const source = plan.mode === "remote"
+    ? (plan.fallback
+      ? `备用语音 (${remoteVoiceName(plan.voiceId)} 不可用)`
+      : `远程语音 · ${remoteVoiceName(plan.voiceId)}`)
+    : `浏览器内置 · ${plan.local.name}`;
+  updateLastEvent(`语音输出 · ${source} · 情绪 ${emotion}`);
+
+  const speechPromise = speakCurrentText(clean, emotion, metricsToken, plan);
   const typedPromise = bubble.type({
     label: "tianbao",
     text: clean,
@@ -1180,15 +1526,19 @@ async function respondWithText(text, timbre) {
     return;
   }
 
+  // Keep the timing line readable after playback stops. The bubble close
+  // button still dismisses it immediately.
+  const lingerMs = speechMetrics && !speechMetrics.hidden ? 3600 : 900;
   simTimer = window.setTimeout(() => {
     if (sim !== simToken) return;
     simTimer = null;
     voiceResponseActive = false;
     endInteractionIfCurrent(token);
     bubble.hide();
+    clearSpeechMetrics();
     renderVoiceUI(voice.snapshot());
     updateLastEvent("语音输出结束, 已恢复当前情绪.");
-  }, 900);
+  }, lingerMs);
 }
 
 async function playUserRecording() {
@@ -1224,26 +1574,295 @@ function populateCustomVoiceBase() {
   }
 }
 
+function appendVoiceOption(parent, value, label, {
+  disabled = false,
+  title = "",
+} = {}) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  option.disabled = Boolean(disabled);
+  if (title) option.title = title;
+  parent.append(option);
+  return option;
+}
+
+/**
+ * Rebuild the unified selector from /api/tts/voices + the existing browser
+ * voices. Server voices are never hard-coded: a new directory on the server
+ * appears after the next refresh. Unavailable voices stay visible but are
+ * disabled, and a saved selection is always preserved.
+ */
+function syncTTSVoiceOptions({ force = false } = {}) {
+  if (!ttsVoiceSelect) return;
+
+  const localVoices = voiceLibrary.getVoices();
+  let selectedRemoteId = selectedRemoteVoiceId();
+
+  // First run: adopt the server default (or first available voice) and persist
+  // it, so a reload keeps the same choice.
+  if (ttsSelection.mode === "remote" && !ttsSelection.remoteVoiceId && selectedRemoteId) {
+    ttsSelection = { ...ttsSelection, remoteVoiceId: selectedRemoteId };
+    saveTTSSelection(ttsSelection);
+    selectedRemoteId = ttsSelection.remoteVoiceId;
+  }
+
+  if (ttsSelection.mode === "local"
+    && !localVoices.some((voice) => voice.key === ttsSelection.localKey)
+    && localVoices.length) {
+    ttsSelection = { ...ttsSelection, localKey: localVoices[0].key };
+    saveTTSSelection(ttsSelection);
+  }
+
+  const signature = JSON.stringify({
+    loading: remoteTTS.loading,
+    checked: Boolean(remoteTTS.lastCheckedAt),
+    defaultVoiceId: remoteTTS.defaultVoiceId,
+    remote: remoteTTS.voices.map((voice) => [
+      voice.id,
+      voice.name,
+      voice.description,
+      voice.available,
+      voice.reason,
+    ]),
+    local: localVoices.map((voice) => [
+      voice.key,
+      voice.name,
+      voice.packName,
+      Boolean(voice.custom),
+    ]),
+    mode: ttsSelection.mode,
+    selectedRemoteId,
+    localKey: ttsSelection.localKey,
+  });
+
+  if (!force && signature === ttsOptionsSignature) {
+    const desired = ttsSelection.mode === "remote"
+      ? `remote:${selectedRemoteId}`
+      : `local:${ttsSelection.localKey}`;
+    if (desired && ttsVoiceSelect.value !== desired) ttsVoiceSelect.value = desired;
+    return;
+  }
+
+  // Do not yank the option list out from under an open dropdown; retry when
+  // the user closes it.
+  if (!force
+    && document.activeElement === ttsVoiceSelect
+    && signature !== ttsOptionsSignature) {
+    ttsVoiceSelect.addEventListener("blur", () => {
+      syncTTSVoiceOptions({ force: true });
+    }, { once: true });
+    return;
+  }
+
+  ttsOptionsSignature = signature;
+  ttsVoiceSelect.textContent = "";
+
+  const remoteGroup = document.createElement("optgroup");
+  remoteGroup.label = "服务器音色 · MiniCPM-o";
+  if (!remoteTTS.voices.length) {
+    appendVoiceOption(
+      remoteGroup,
+      "",
+      remoteTTS.loading || !remoteTTS.lastCheckedAt
+        ? "正在加载服务器音色..."
+        : "服务器音色暂不可用（使用备用语音）",
+      { disabled: true, title: remoteTTS.reason || "" }
+    );
+  }
+  if (selectedRemoteId && !remoteTTS.voices.some((voice) => voice.id === selectedRemoteId)) {
+    // Keep the saved id visible even while /voices is unreachable. It is
+    // disabled, so the user cannot newly choose it; when the server lists it
+    // again this synthetic option is replaced by the real one.
+    appendVoiceOption(
+      remoteGroup,
+      `remote:${selectedRemoteId}`,
+      `${selectedRemoteId} · 当前不可用`,
+      {
+        disabled: true,
+        title: "保存的选择仍会保留; 服务器重新提供该音色后会自动恢复.",
+      }
+    );
+  }
+  for (const voice of remoteTTS.voices) {
+    const option = appendVoiceOption(
+      remoteGroup,
+      `remote:${voice.id}`,
+      `${voice.name}${voice.available ? "" : " · 不可用"}`,
+      {
+        disabled: !voice.available,
+        title: [
+          voice.description,
+          voice.available ? "" : `不可用原因: ${voice.reason || "服务器未说明"}`,
+        ].filter(Boolean).join(" · "),
+      }
+    );
+    option.dataset.voiceId = voice.id;
+  }
+  ttsVoiceSelect.append(remoteGroup);
+
+  const localGroup = document.createElement("optgroup");
+  localGroup.label = "浏览器内置 · 无需服务器";
+  for (const voice of localVoices) {
+    appendVoiceOption(
+      localGroup,
+      `local:${voice.key}`,
+      `${voice.name} · ${voice.packName}${voice.custom ? " · 自定义" : ""}`,
+      {
+        title: `音高 ${voice.pitch.toFixed(2)} · 语速 ${voice.rate.toFixed(2)}`,
+      }
+    );
+  }
+  ttsVoiceSelect.append(localGroup);
+
+  const desired = ttsSelection.mode === "remote"
+    ? `remote:${selectedRemoteId}`
+    : `local:${ttsSelection.localKey}`;
+  if (desired) ttsVoiceSelect.value = desired;
+  if (!desired && ttsVoiceSelect.options.length) ttsVoiceSelect.selectedIndex = 0;
+}
+
+function setLocalVoiceSelection(key) {
+  if (!key) return;
+  voiceLibrary.setActiveVoice(key);
+  ttsSelection = { ...ttsSelection, mode: "local", localKey: key };
+  saveTTSSelection(ttsSelection);
+  ttsRuntimeFallback = null;
+  syncTTSVoiceOptions({ force: true });
+  renderTTSServiceStatus();
+  updateTtsStatus();
+}
+
+function handleVoiceSelectionChange() {
+  if (!ttsVoiceSelect) return;
+  const value = ttsVoiceSelect.value || "";
+
+  if (value.startsWith("remote:")) {
+    const id = value.slice("remote:".length);
+    if (!id) return;
+    ttsSelection = { ...ttsSelection, mode: "remote", remoteVoiceId: id };
+    saveTTSSelection(ttsSelection);
+    ttsRuntimeFallback = null;
+    renderTimbres();
+    renderTTSServiceStatus();
+    updateTtsStatus();
+    updateLastEvent(`音色切换 · ${remoteVoiceName(id)} (服务器)`);
+    return;
+  }
+
+  if (value.startsWith("local:")) {
+    setLocalVoiceSelection(value.slice("local:".length));
+    renderTimbres();
+    updateLastEvent(`音色切换 · ${voiceLibrary.getActiveVoice().name} (浏览器内置)`);
+  }
+}
+
+function renderTTSServiceStatus() {
+  if (!ttsServiceBadge || !ttsServiceDetail) return;
+
+  const snapshot = remoteTTS.snapshot();
+  const plan = resolveSpeechPlan();
+  const remoteMode = ttsSelection.mode === "remote";
+
+  let badgeText = "检测中";
+  let badgeState = "checking";
+  if (snapshot.lastCheckedAt) {
+    if (snapshot.available) {
+      badgeText = `远程就绪 · ${snapshot.availableVoiceCount} 可用`;
+      badgeState = "online";
+    } else {
+      badgeText = "远程不可用 · 备用语音";
+      badgeState = "offline";
+    }
+  }
+  ttsServiceBadge.textContent = badgeText;
+  ttsServiceBadge.dataset.state = badgeState;
+
+  const details = [];
+  if (!snapshot.lastCheckedAt) {
+    details.push("正在检测 /api/tts/status ...");
+  } else if (snapshot.available) {
+    details.push(
+      `语音服务可用 · ${snapshot.voiceCount} 个音色`
+      + (snapshot.defaultVoiceId ? ` · 默认 ${snapshot.defaultVoiceId}` : "")
+    );
+  } else {
+    details.push(`语音服务不可用${snapshot.reason ? ` · ${snapshot.reason}` : ""}`);
+  }
+
+  if (remoteMode) {
+    if (plan.unavailableReason) {
+      details.push(`所选音色不可用: ${plan.unavailableReason} · 使用备用语音`);
+    } else {
+      details.push(`当前: ${remoteVoiceName(plan.voiceId)}`);
+    }
+  } else {
+    details.push(`当前: 浏览器内置 · ${plan.local.name}`);
+  }
+
+  if (!voice.snapshot().speechSupported) {
+    details.push("浏览器无语音合成, 备用时仅显示文字");
+  }
+  if (snapshot.lastCheckedAt) {
+    const checked = new Date(snapshot.lastCheckedAt);
+    details.push(`最近检测 ${checked.toLocaleTimeString("zh-CN", { hour12: false })}`);
+  }
+
+  ttsServiceDetail.textContent = details.join(" · ");
+
+  const fallbackActive = remoteMode && (
+    plan.fallback
+    || Boolean(ttsRuntimeFallback)
+    || (Boolean(snapshot.lastCheckedAt) && !snapshot.available)
+  );
+  if (ttsFallbackNotice) {
+    ttsFallbackNotice.hidden = !fallbackActive;
+    if (fallbackActive) {
+      const reason = ttsRuntimeFallback
+        ? ttsRuntimeFallback.message
+        : (plan.unavailableReason || snapshot.reason || "远程语音不可用");
+      ttsFallbackNotice.title = reason;
+      ttsFallbackNotice.textContent = "正在使用备用语音";
+    } else {
+      ttsFallbackNotice.removeAttribute("title");
+    }
+  }
+}
+
 function updateTtsStatus() {
-  const active = voiceLibrary.getActiveVoice();
-  const snapshot = voice.snapshot();
+  if (!ttsStatus) return;
+  const plan = resolveSpeechPlan();
+
+  if (ttsSelection.mode === "remote") {
+    const notes = [];
+    if (!remoteTTS.lastCheckedAt) notes.push("正在检测语音服务");
+    else if (plan.unavailableReason) notes.push("所选音色不可用 · 使用备用语音");
+    else if (ttsRuntimeFallback) notes.push("正在使用备用语音");
+    else if (!remoteTTS.available) notes.push("远程不可用 · 使用备用语音");
+    else notes.push("远程语音就绪");
+    ttsStatus.textContent = `当前音色: ${remoteVoiceName(plan.voiceId)} (服务器) · ${notes.join(" · ")}`;
+    return;
+  }
+
   const notes = [];
-  if (!snapshot.speechSupported) notes.push("当前浏览器无语音合成, 仅显示文字.");
-  if (!snapshot.secure) notes.push("手机录音需要 HTTPS.");
-  ttsStatus.textContent = `当前音色: ${active.name} (${active.packName})${notes.length ? ` · ${notes.join(" ")}` : ""}`;
+  if (!voice.snapshot().speechSupported) notes.push("浏览器无语音合成, 仅显示文字");
+  ttsStatus.textContent = `当前音色: ${plan.local.name} (${plan.local.packName}) · 浏览器内置`
+    + (notes.length ? ` · ${notes.join(" · ")}` : "");
 }
 
 function renderTimbres() {
   if (!timbreGrid) return;
-  const active = voiceLibrary.getActiveVoice();
+  const localActiveKey = ttsSelection.mode === "local"
+    ? voiceLibrary.getActiveVoice().key
+    : "";
   timbreGrid.textContent = "";
   for (const voice of voiceLibrary.getVoices()) {
     const card = document.createElement("button");
     card.type = "button";
-    card.className = `timbre-card${voice.key === active.key ? " is-active" : ""}`;
+    card.className = `timbre-card${voice.key === localActiveKey ? " is-active" : ""}`;
     card.dataset.voiceKey = voice.key;
     card.setAttribute("role", "option");
-    card.setAttribute("aria-selected", String(voice.key === active.key));
+    card.setAttribute("aria-selected", String(voice.key === localActiveKey));
 
     const name = document.createElement("span");
     name.className = "timbre-name";
@@ -1254,9 +1873,8 @@ function renderTimbres() {
     card.append(name, meta);
 
     card.addEventListener("click", () => {
-      voiceLibrary.setActiveVoice(voice.key);
+      setLocalVoiceSelection(voice.key);
       renderTimbres();
-      updateTtsStatus();
     });
     timbreGrid.append(card);
   }
@@ -1344,10 +1962,12 @@ function renderCustomVoices() {
 
 function renderVoiceLab() {
   populateCustomVoiceBase();
+  syncTTSVoiceOptions({ force: true });
   renderTimbres();
   renderVoicePacks();
   renderCustomVoices();
   updateTtsStatus();
+  renderTTSServiceStatus();
 }
 
 function updateCustomVoiceLabels() {
@@ -1396,7 +2016,9 @@ async function downloadVoicePack(url) {
 
 function stopVoiceOutput() {
   cancelSimulation({ hideBubble: true });
+  remoteTTS.cancel();
   voice.cancelSpeech();
+  clearSpeechMetrics();
   ttsStatus.textContent = "已停止 tianbao 的语音输出.";
 }
 
@@ -1407,7 +2029,7 @@ async function speakTypedText() {
     ttsText.focus();
     return;
   }
-  await respondWithText(text, voiceLibrary.getActiveVoice());
+  await respondWithText(text);
 }
 
 /* ==========================================================================
@@ -1434,7 +2056,10 @@ function setPanelTab(tab, { focus = false } = {}) {
   }
   if (panelBody) panelBody.scrollTop = 0;
 
-  if (tab === "voice") renderVoiceLab();
+  if (tab === "voice") {
+    renderVoiceLab();
+    remoteTTS.refresh({ force: true });
+  }
   if (tab === "action") updateActionAvailability();
   if (focus) {
     const target = panelTabs.find((button) => button.dataset.panelTab === tab);
@@ -1564,6 +2189,9 @@ voiceDebugRespond.addEventListener("click", respondWithVoice);
 
 ttsSpeak.addEventListener("click", speakTypedText);
 ttsStop.addEventListener("click", stopVoiceOutput);
+if (ttsVoiceSelect) {
+  ttsVoiceSelect.addEventListener("change", handleVoiceSelectionChange);
+}
 voicePackDownload.addEventListener("click", () => {
   const url = voicePackUrl.value.trim();
   if (!url) {
@@ -1645,6 +2273,8 @@ updateActionAvailability();
 updateCustomVoiceLabels();
 renderVoiceLab();
 renderVoiceUI(voice.snapshot());
+renderTTSServiceStatus();
+remoteTTS.start();
 document.body.dataset.view = appState.view;
 stage.dataset.expression = appState.baseExpression;
 world.setExpression(appState.baseExpression);
