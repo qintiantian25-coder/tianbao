@@ -9,12 +9,13 @@ from emotion import (
     event_expression,
 )
 from energy import consume_energy, recover_energy
+from social import increase_social_need, reduce_social_need
 
 
 class StateStore:
 
     def __init__(self):
-        self.tianbao = {"emotion": "happy", "intensity": 60, "energy": 80}
+        self.tianbao = {"emotion": "happy", "intensity": 60, "energy": 80, "social_need": 20}
         self.personality = {"happy_decay": 1, "sad_decay": 4}
         self._last_update = time.monotonic()
         self._state_lock = threading.Lock()
@@ -36,6 +37,7 @@ class StateStore:
             "emotion": self.tianbao["emotion"],
             "intensity": round(float(self.tianbao["intensity"]), 2),
             "energy": round(float(self.tianbao["energy"]), 2), # round(float(...),2) 保留两位小数
+            "social_need": round(float(self.tianbao["social_need"]), 2),
             "description": state_expression(self.tianbao),
         }
 
@@ -89,4 +91,14 @@ class StateStore:
         with self._state_lock:
             self._update_elapsed_time()
             recover_energy(self.tianbao, amount)
+            return self._state_data()  # 返回更新后的状态字典
+
+    def apply_social_increase(self,amount):
+        if amount < 0:
+            raise ValueError("社交需求增加量不能为负数")
+        
+        with self._state_lock:
+            self._update_elapsed_time()
+            from social import increase_social_need
+            increase_social_need(self.tianbao, amount)
             return self._state_data()  # 返回更新后的状态字典
