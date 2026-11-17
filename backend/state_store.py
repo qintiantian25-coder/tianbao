@@ -101,3 +101,12 @@ class StateStore:
             self._update_elapsed_time()
             increase_social_need(self.tianbao, amount)
             return self._state_data()  # 返回更新后的状态字典
+
+    def apply_social_need_decrease(self, amount):
+        if amount < 0:
+            raise ValueError("社交需求减少量不能为负数")
+        
+        with self._state_lock:
+            self._update_elapsed_time()
+            reduce_social_need(self.tianbao, amount)
+            return self._state_data()  # 返回更新后的状态字典
