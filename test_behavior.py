@@ -1,9 +1,45 @@
 from behavior import decide_action
 
-assert decide_action({"energy": 15, "emotion": "happy"}) == "rest"
-assert decide_action({"energy": 25, "emotion": "happy"}) == "rest"
-assert decide_action({"energy": 30, "emotion": "happy"}) == "idle"
-assert decide_action({"energy": 80, "emotion": "happy"}) == "interact"
-assert decide_action({"energy": 80, "emotion": "sad"}) == "idle"
+# 1. 精力不足，优先休息
+assert decide_action({
+    "energy": 20,
+    "social_need": 90,
+    "emotion": "happy"
+}) == "rest"
 
-print("行为决策测试通过！")
+# 2. 三个条件都满足，可以互动
+assert decide_action({
+    "energy": 80,
+    "social_need": 85,
+    "emotion": "happy"
+}) == "interact"
+
+# 3. 社交需求不足，保持待机
+assert decide_action({
+    "energy": 80,
+    "social_need": 10,
+    "emotion": "happy"
+}) == "idle"
+
+# 4. 精力不足以主动互动
+assert decide_action({
+    "energy": 50,
+    "social_need": 90,
+    "emotion": "happy"
+}) == "idle"
+
+# 5. 当前情绪不满足互动规则
+assert decide_action({
+    "energy": 90,
+    "social_need": 90,
+    "emotion": "sad"
+}) == "idle"
+
+# 6. 测试互动阈值边界
+assert decide_action({
+    "energy": 70,
+    "social_need": 70,
+    "emotion": "happy"
+}) == "interact"
+
+print("多状态行为决策测试通过！")
