@@ -67,19 +67,20 @@ def index():
 # 4. 获取机器人实时状态
 # =========================
 
-@app.get("/api/state")
+# 同一个服务器地址、同一个端口，可以提供很多不同的 API 接口
+@app.get("/api/state") # 对应接口，GET：网页向后端获取数据
 def get_state():
 
     current = store.get_state()
 
-    return jsonify(current)
+    return jsonify(current) # 把 Python 数据转换成可以通过 HTTP 发送给网页的 JSON 响应
 
 
 # =========================
 # 5. 摸头事件
 # =========================
 
-@app.post("/api/touch")
+@app.post("/api/touch") # 对应接口，POST：网页向后端提交数据或触发操作
 def touch():
 
     amount, error = read_amount(1, 30)

@@ -8,12 +8,13 @@ from emotion import (
     state_expression,
     event_expression,
 )
+from energy import consume_energy, recover_energy
 
 
 class StateStore:
 
     def __init__(self):
-        self.tianbao = {"emotion": "happy", "intensity": 60}
+        self.tianbao = {"emotion": "happy", "intensity": 60, "energy": 80}
         self.personality = {"happy_decay": 1, "sad_decay": 4}
         self._last_update = time.monotonic()
         self._state_lock = threading.Lock()
@@ -34,6 +35,7 @@ class StateStore:
         return {
             "emotion": self.tianbao["emotion"],
             "intensity": round(float(self.tianbao["intensity"]), 2),
+            "energy": round(float(self.tianbao["energy"]), 2), # round(float(...),2) 保留两位小数
             "description": state_expression(self.tianbao),
         }
 
@@ -68,3 +70,23 @@ class StateStore:
             current = self._state_data()
 
             return current, message
+
+    def apply_energy_cost(self, amount):
+
+        if amount < 0:
+            raise ValueError("精力消耗量不能为负数")
+
+        with self._state_lock:
+            self._update_elapsed_time()
+            consume_energy(self.tianbao, amount)
+            return self._state_data()  # 返回更新后的状态字典
+
+    def apply_energy_recovery(self, amount):
+
+        if amount < 0:
+            raise ValueError("精力恢复量不能为负数")
+        
+        with self._state_lock:
+            self._update_elapsed_time()
+            recover_energy(self.tianbao, amount)
+            return self._state_data()  # 返回更新后的状态字典
