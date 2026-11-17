@@ -93,12 +93,11 @@ class StateStore:
             recover_energy(self.tianbao, amount)
             return self._state_data()  # 返回更新后的状态字典
 
-    def apply_social_increase(self,amount):
+    def apply_social_need_increase(self,amount):
         if amount < 0:
             raise ValueError("社交需求增加量不能为负数")
         
         with self._state_lock:
             self._update_elapsed_time()
-            from social import increase_social_need
             increase_social_need(self.tianbao, amount)
             return self._state_data()  # 返回更新后的状态字典

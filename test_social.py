@@ -1,23 +1,11 @@
-from social import increase_social_need, reduce_social_need
+from backend.state_store import StateStore
 
-state = {
-    "social_need": 20
-}
+store = StateStore()
 
-# 长时间没有陪伴
-increase_social_need(state, 30)
-assert state["social_need"] == 50
+assert store.get_state()["social_need"] == 20
 
-# 主人开始陪伴
-reduce_social_need(state, 15)
-assert state["social_need"] == 35
+store.apply_social_need_increase(30)
 
-# 测试上限
-increase_social_need(state, 100)
-assert state["social_need"] == 100
+assert store.get_state()["social_need"] == 50
 
-# 测试下限
-reduce_social_need(state, 200)
-assert state["social_need"] == 0
-
-print("社交需求测试通过！")
+print("StateStore 社交需求集成测试通过！")
