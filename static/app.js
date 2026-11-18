@@ -58,6 +58,9 @@ const stopSimulationBtn = $("stopSimulation");
 const restoreIdleBtn = $("restoreIdle");
 const autonomyTick = $("autonomyTick");
 const autonomyStatus = $("autonomyStatus");
+const autonomyCooldownReset = $("autonomyCooldownReset");
+const autonomyPresetStatus = $("autonomyPresetStatus");
+const autonomyPresetButtons = [...document.querySelectorAll("[data-autonomy-preset]")];
 const stateGroup = document.querySelector(".state-group");
 
 const sceneRoot = $("sceneRoot");
@@ -190,6 +193,13 @@ const AUTONOMY_META = {
     headLift: 0,
     duration: 2200,
   },
+};
+
+/** Display labels only; the backend owns the preset target values. */
+const AUTONOMY_PRESET_META = {
+  wants_companion: "想要陪伴",
+  low_energy: "精力不足",
+  normal_idle: "普通待机",
 };
 
 const appState = {
@@ -931,6 +941,17 @@ function restoreIdle() {
    ========================================================================== */
 
 let autonomyInFlight = false;
+let autonomyBlocked = false;
+
+function setAutonomyBusy(busy) {
+  const disabled = busy || autonomyBlocked;
+
+  autonomyTick.disabled = disabled;
+  autonomyCooldownReset.disabled = disabled;
+  for (const button of autonomyPresetButtons) {
+    button.disabled = disabled;
+  }
+}
 
 /**
  * Show the result of one server-side decision. This never calls TTS or the
@@ -964,11 +985,10 @@ function playAutonomyPreview(action) {
 }
 
 async function runAutonomyTick() {
-  if (autonomyInFlight) return;
+  if (autonomyInFlight || autonomyBlocked) return;
 
-  let blocked = false;
   autonomyInFlight = true;
-  autonomyTick.disabled = true;
+  setAutonomyBusy(true);
   clearDebugError();
   autonomyStatus.textContent = "正在请求后端执行一次自主决策...";
   actionDepth += 1;
@@ -1005,7 +1025,7 @@ async function runAutonomyTick() {
     const message = friendlyError(error);
 
     if (error.status === 403) {
-      blocked = true;
+      autonomyBlocked = true;
       autonomyStatus.textContent = "调试接口仅限本机访问.";
       showDebugError(message);
     } else {
@@ -1016,7 +1036,125 @@ async function runAutonomyTick() {
   } finally {
     actionDepth -= 1;
     autonomyInFlight = false;
-    autonomyTick.disabled = blocked;
+    setAutonomyBusy(false);
+  }
+}
+
+async function applyAutonomyPreset(presetKey) {
+  const label = AUTONOMY_PRESET_META[presetKey];
+  if (!label || autonomyInFlight || autonomyBlocked) return;
+
+  autonomyInFlight = true;
+  setAutonomyBusy(true);
+  clearDebugError();
+  autonomyPresetStatus.textContent = `正在应用预设: ${label}...`;
+  actionDepth += 1;
+  backendEpoch += 1;
+
+  try {
+    const data = await apiRequest("/api/debug/state/preset", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Tianbao-Debug": "1",
+      },
+      body: JSON.stringify({ preset: presetKey }),
+    });
+
+    if (!data || typeof data.preset !== "string") {
+      throw new Error("后端返回的状态预设格式不正确.");
+    }
+    if (!applyBackendState(data.state)) {
+      throw new Error("后端返回的状态格式不正确.");
+    }
+
+    setOnline(true);
+    if (connectionErrorShown) clearDebugError();
+
+    const energyText = appState.backend.energy === null
+      ? "--" : appState.backend.energy.toFixed(1);
+    const socialText = appState.backend.socialNeed === null
+      ? "--" : appState.backend.socialNeed.toFixed(1);
+    const cooldown = Number(data.cooldown_remaining);
+    const cooldownText = Number.isFinite(cooldown) && cooldown > 0
+      ? ` · 主动互动冷却剩余 ${Math.ceil(cooldown)}s`
+      : "";
+    autonomyPresetStatus.textContent =
+      `已应用: ${label} · 精力 ${energyText} · 社交 ${socialText}${cooldownText}.`;
+
+    for (const button of autonomyPresetButtons) {
+      const active = button.dataset.autonomyPreset === presetKey;
+      button.classList.toggle("is-on", active);
+      button.setAttribute("aria-pressed", String(active));
+    }
+
+    updateLastEvent(`状态预设 · ${label} · 未执行行为`);
+  } catch (error) {
+    const message = friendlyError(error);
+
+    if (error.status === 403) {
+      autonomyBlocked = true;
+      autonomyPresetStatus.textContent = "调试接口仅限本机访问.";
+      showDebugError(message);
+    } else {
+      setOnline(false);
+      autonomyPresetStatus.textContent = "状态预设应用失败.";
+      showConnectionError(`状态预设请求失败: ${message}`);
+    }
+  } finally {
+    actionDepth -= 1;
+    autonomyInFlight = false;
+    setAutonomyBusy(false);
+  }
+}
+
+async function resetAutonomyCooldown() {
+  if (autonomyInFlight || autonomyBlocked) return;
+
+  autonomyInFlight = true;
+  setAutonomyBusy(true);
+  clearDebugError();
+  autonomyStatus.textContent = "正在重置主动互动冷却...";
+  actionDepth += 1;
+
+  try {
+    const data = await apiRequest("/api/debug/autonomy/reset", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Tianbao-Debug": "1",
+      },
+      body: "{}",
+    });
+
+    if (!data || data.reset !== true) {
+      throw new Error("后端返回的重置结果格式不正确.");
+    }
+
+    setOnline(true);
+    if (connectionErrorShown) clearDebugError();
+
+    const remaining = Number(data.cooldown_remaining);
+    autonomyStatus.textContent = Number.isFinite(remaining)
+      ? `主动互动冷却已重置 (剩余 ${Math.ceil(remaining)}s).`
+      : "主动互动冷却已重置.";
+    updateLastEvent("调试 · 已重置主动互动冷却 · 状态未改变");
+  } catch (error) {
+    const message = friendlyError(error);
+
+    if (error.status === 403) {
+      autonomyBlocked = true;
+      autonomyStatus.textContent = "调试接口仅限本机访问.";
+      showDebugError(message);
+    } else {
+      setOnline(false);
+      autonomyStatus.textContent = "重置冷却失败.";
+      showConnectionError(`重置冷却请求失败: ${message}`);
+    }
+  } finally {
+    actionDepth -= 1;
+    autonomyInFlight = false;
+    setAutonomyBusy(false);
   }
 }
 
@@ -1031,7 +1169,8 @@ async function refreshAutonomyStatus() {
     }
   } catch (error) {
     if (error.status === 403) {
-      autonomyTick.disabled = true;
+      autonomyBlocked = true;
+      setAutonomyBusy(false);
       autonomyStatus.textContent = "调试接口仅限本机访问.";
     }
   }
@@ -2358,6 +2497,12 @@ voiceDebugRecord.addEventListener("click", handleVoiceToggle);
 voiceDebugPlay.addEventListener("click", playUserRecording);
 voiceDebugRespond.addEventListener("click", respondWithVoice);
 autonomyTick.addEventListener("click", runAutonomyTick);
+autonomyCooldownReset.addEventListener("click", resetAutonomyCooldown);
+autonomyPresetButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    applyAutonomyPreset(button.dataset.autonomyPreset);
+  });
+});
 
 ttsSpeak.addEventListener("click", speakTypedText);
 ttsStop.addEventListener("click", stopVoiceOutput);

@@ -8,7 +8,7 @@
   <title>tianbao virtual V0.6 | Interactive Companion</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2363b3a1'/%3E%3Ctext x='32' y='45' font-size='36' text-anchor='middle' fill='%23eefcf6'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/style.css?v=0.6.2">
-  <script type="module" src="/static/app.js?v=0.6.3"></script>
+  <script type="module" src="/static/app.js?v=0.6.4"></script>
 </head>
 <body>
   <div class="backdrop" aria-hidden="true">
@@ -671,8 +671,20 @@
             <span class="summary-hint">手动 · 模拟</span>
           </div>
           <div class="group-body">
+            <p class="field-label">状态预设</p>
+            <div class="tier-buttons">
+              <button class="btn-chip" type="button" data-autonomy-preset="wants_companion" aria-pressed="false">想要陪伴</button>
+              <button class="btn-chip" type="button" data-autonomy-preset="low_energy" aria-pressed="false">精力不足</button>
+              <button class="btn-chip" type="button" data-autonomy-preset="normal_idle" aria-pressed="false">普通待机</button>
+            </div>
+            <p id="autonomyPresetStatus" class="level-label">尚未应用状态预设.</p>
+            <p class="field-note">预设只通过后端 StateStore 调整精力与社交需求, 情绪保持当前值; 不会自动执行决策, 也不会清除互动冷却.</p>
+
             <p id="autonomyStatus" class="level-label">尚未执行自主决策.</p>
-            <button id="autonomyTick" class="btn btn-secondary" type="button">执行一次自主决策</button>
+            <div class="control-buttons">
+              <button id="autonomyTick" class="btn btn-secondary" type="button">执行一次自主决策</button>
+              <button id="autonomyCooldownReset" class="btn btn-ghost" type="button">重置主动互动冷却</button>
+            </div>
             <p class="field-note">调用后端同一份 StateStore / BehaviorScheduler, 真实更新状态; 只执行一次, 动画与气泡为前端模拟, 不会触发真实语音.</p>
           </div>
         </section>

@@ -49,6 +49,14 @@ DEBUG_AUTONOMY_API = os.environ.get("TIANBAO_DEBUG_API", "").strip().lower() in 
     "on",
 }
 
+# 调试预设只调整精力和社交需求，情绪保持当前值；不修改 core/ 内部字典，
+# 也不清除自主互动的冷却.
+AUTONOMY_PRESETS = {
+    "wants_companion": {"energy": 80.0, "social_need": 90.0},
+    "low_energy": {"energy": 20.0, "social_need": 20.0},
+    "normal_idle": {"energy": 80.0, "social_need": 20.0},
+}
+
 
 # =========================
 # 2. 请求参数校验
@@ -182,6 +190,34 @@ def autonomy_debug_allowed():
     return DEBUG_AUTONOMY_API or _is_loopback(request.remote_addr)
 
 
+def _debug_access_error():
+    """调试接口的统一访问检查。GET 只读，其余请求需要调试标记。"""
+    if not autonomy_debug_allowed():
+        return jsonify({"error": "自主行为调试接口仅限本机访问."}), 403
+
+    if request.method not in {"GET", "HEAD"}:
+        # 自定义请求头会让跨站表单无法直接触发状态修改接口.
+        if request.headers.get("X-Tianbao-Debug") != "1":
+            return jsonify({"error": "缺少调试请求标记."}), 403
+
+    return None
+
+
+def _apply_energy_and_social_targets(state, energy_target, social_target):
+    """通过 StateStore 已有的增减方法调整精力和社交需求。"""
+    energy = float(state["energy"])
+    if energy_target > energy:
+        store.apply_energy_recovery(energy_target - energy)
+    elif energy_target < energy:
+        store.apply_energy_cost(energy - energy_target)
+
+    social_need = float(state["social_need"])
+    if social_target > social_need:
+        store.apply_social_need_increase(social_target - social_need)
+    elif social_target < social_need:
+        store.apply_social_need_decrease(social_need - social_target)
+
+
 def _cooldown_remaining(now):
     """返回距离下次允许主动互动还剩多少秒。"""
     last_interact_at = autonomy_scheduler.last_interact_at
@@ -204,13 +240,9 @@ def debug_autonomy():
          和 execute_action()，执行一次后立即返回.
     """
 
-    if not autonomy_debug_allowed():
-        return jsonify({"error": "自主行为调试接口仅限本机访问."}), 403
-
-    if request.method == "POST":
-        # 自定义请求头会让跨站表单无法直接触发这个状态修改接口.
-        if request.headers.get("X-Tianbao-Debug") != "1":
-            return jsonify({"error": "缺少调试请求标记."}), 403
+    error = _debug_access_error()
+    if error:
+        return error
 
     if request.method == "GET":
         now = time.monotonic()
@@ -241,6 +273,66 @@ def debug_autonomy():
         "cooldown_seconds": autonomy_scheduler.cooldown_seconds,
         "cooldown_remaining": round(cooldown_remaining, 1),
         "simulated": True,
+    })
+
+
+@app.post("/api/debug/state/preset")
+def debug_state_preset():
+    """仅本地开发：把精力和社交需求调整到预设值，不执行行为。
+
+    预设只调用 StateStore 已有的增减方法，不直接写 store.tianbao，
+    也不会清除 BehaviorScheduler 的主动互动冷却.
+    """
+    error = _debug_access_error()
+    if error:
+        return error
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "请求需要 JSON 对象."}), 400
+
+    preset_key = data.get("preset")
+    if not isinstance(preset_key, str) or preset_key not in AUTONOMY_PRESETS:
+        return jsonify({
+            "error": "未知的状态预设.",
+            "presets": sorted(AUTONOMY_PRESETS),
+        }), 400
+
+    targets = AUTONOMY_PRESETS[preset_key]
+
+    with _autonomy_debug_lock:
+        state = store.get_state()
+        _apply_energy_and_social_targets(
+            state,
+            targets["energy"],
+            targets["social_need"],
+        )
+        result = store.get_state()
+        cooldown_remaining = _cooldown_remaining(time.monotonic())
+
+    return jsonify({
+        "preset": preset_key,
+        "state": result,
+        "cooldown_seconds": autonomy_scheduler.cooldown_seconds,
+        "cooldown_remaining": round(cooldown_remaining, 1),
+        "cooldown_reset": False,
+    })
+
+
+@app.post("/api/debug/autonomy/reset")
+def debug_autonomy_reset():
+    """仅本地开发：显式清除主动互动冷却，不修改任何机器人状态。"""
+    error = _debug_access_error()
+    if error:
+        return error
+
+    with _autonomy_debug_lock:
+        autonomy_scheduler.last_interact_at = None
+
+    return jsonify({
+        "reset": True,
+        "cooldown_seconds": autonomy_scheduler.cooldown_seconds,
+        "cooldown_remaining": 0.0,
     })
 
 
