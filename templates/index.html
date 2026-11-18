@@ -8,7 +8,7 @@
   <title>tianbao virtual V0.6 | Interactive Companion</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2363b3a1'/%3E%3Ctext x='32' y='45' font-size='36' text-anchor='middle' fill='%23eefcf6'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/style.css?v=0.6.2">
-  <script type="module" src="/static/app.js?v=0.6.2"></script>
+  <script type="module" src="/static/app.js?v=0.6.3"></script>
 </head>
 <body>
   <div class="backdrop" aria-hidden="true">
@@ -652,6 +652,8 @@
           <div class="state-grid">
             <div class="state-cell"><span class="state-key">情绪</span><strong id="dbgEmotion">--</strong></div>
             <div class="state-cell"><span class="state-key">强度</span><strong id="dbgIntensity">--</strong></div>
+            <div class="state-cell"><span class="state-key">精力</span><strong id="dbgEnergy">--</strong></div>
+            <div class="state-cell"><span class="state-key">社交需求</span><strong id="dbgSocial">--</strong></div>
             <div class="state-cell"><span class="state-key">连接</span><strong id="dbgConnection" class="conn-text is-connecting">连接中</strong></div>
             <div class="state-cell"><span class="state-key">同步</span><strong id="dbgSync">--:--:--</strong></div>
           </div>
@@ -661,6 +663,18 @@
           </div>
           <div class="dbg-mode-row"><span>交互状态</span><strong id="dbgMode">待机</strong></div>
           <p id="dbgLastEvent" class="dbg-last-event">最近事件: 暂无</p>
+        </section>
+
+        <section class="debug-group" aria-label="自主行为调试">
+          <div class="group-heading">
+            <span>自主行为</span>
+            <span class="summary-hint">手动 · 模拟</span>
+          </div>
+          <div class="group-body">
+            <p id="autonomyStatus" class="level-label">尚未执行自主决策.</p>
+            <button id="autonomyTick" class="btn btn-secondary" type="button">执行一次自主决策</button>
+            <p class="field-note">调用后端同一份 StateStore / BehaviorScheduler, 真实更新状态; 只执行一次, 动画与气泡为前端模拟, 不会触发真实语音.</p>
+          </div>
         </section>
 
         <details class="debug-group" open>

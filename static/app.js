@@ -30,6 +30,8 @@ const offlineChip = $("offlineChip");
 
 const dbgEmotion = $("dbgEmotion");
 const dbgIntensity = $("dbgIntensity");
+const dbgEnergy = $("dbgEnergy");
+const dbgSocial = $("dbgSocial");
 const dbgDescription = $("dbgDescription");
 const dbgConnection = $("dbgConnection");
 const dbgSync = $("dbgSync");
@@ -54,6 +56,8 @@ const listenInput = $("listenInput");
 const listenButton = $("listenButton");
 const stopSimulationBtn = $("stopSimulation");
 const restoreIdleBtn = $("restoreIdle");
+const autonomyTick = $("autonomyTick");
+const autonomyStatus = $("autonomyStatus");
 const stateGroup = document.querySelector(".state-group");
 
 const sceneRoot = $("sceneRoot");
@@ -160,11 +164,41 @@ const TOUCH_TIER_LABEL = {
   affectionate: "亲昵摸头",
 };
 
+/**
+ * Front-end presentation for one server-side autonomy decision.
+ * The server owns the rules; this map only decides how to show the result.
+ */
+const AUTONOMY_META = {
+  interact: {
+    label: "互动",
+    bubble: "主人，我想和你玩一会儿~",
+    expression: "touch_medium",
+    headLift: -2,
+    duration: 3200,
+  },
+  rest: {
+    label: "休息",
+    bubble: "我想休息一下~",
+    expression: "calm",
+    headLift: -1.5,
+    duration: 2800,
+  },
+  idle: {
+    label: "待机",
+    bubble: "tianbao 正在安静待机...",
+    expression: null,
+    headLift: 0,
+    duration: 2200,
+  },
+};
+
 const appState = {
   /** Authoritative Flask state. */
   backend: {
     emotion: "happy",
     intensity: 60,
+    energy: null,
+    socialNeed: null,
     description: "",
     online: null,
     lastSync: null,
@@ -281,6 +315,10 @@ let activeVoiceToken = null;
 function resolveExpression() {
   const interaction = appState.interaction;
 
+  if (interaction.mode === "autonomy") {
+    const meta = AUTONOMY_META[interaction.autonomyAction];
+    return meta && meta.expression ? meta.expression : appState.baseExpression;
+  }
   if (interaction.mode === "touch") {
     return interaction.touchLevel ? `touch_${interaction.touchLevel}` : "touch_light";
   }
@@ -341,6 +379,7 @@ function cancelSimulation({ hideBubble = true, keepTouch = false } = {}) {
   const isSimulated = mode === "speaking"
     || mode === "voice_listening"
     || mode === "listening"
+    || mode === "autonomy"
     || (mode === "touch" && !keepTouch);
 
   if (isSimulated) {
@@ -555,7 +594,11 @@ async function apiRequest(url, options = {}) {
     }
 
     if (!response.ok) {
-      throw new Error(data && data.error ? data.error : `请求失败 (${response.status}).`);
+      const error = new Error(
+        data && data.error ? data.error : `请求失败 (${response.status}).`,
+      );
+      error.status = response.status;
+      throw error;
     }
     return data;
   } catch (error) {
@@ -606,16 +649,27 @@ function showConnectionError(message) {
   showDebugError(message);
 }
 
+function percentOrNull(value) {
+  if (value === null || value === undefined) return null;
+
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+
+  return Math.max(0, Math.min(100, number));
+}
+
 function applyBackendState(data) {
   if (!data || typeof data !== "object") return false;
   if (!["happy", "sad", "calm"].includes(data.emotion)) return false;
 
-  const intensity = Math.max(0, Math.min(100, Number(data.intensity) || 0));
+  const intensity = percentOrNull(data.intensity);
   appState.backend.emotion = data.emotion;
-  appState.backend.intensity = intensity;
+  appState.backend.intensity = intensity === null ? 0 : intensity;
+  appState.backend.energy = percentOrNull(data.energy);
+  appState.backend.socialNeed = percentOrNull(data.social_need);
   appState.backend.description = typeof data.description === "string" ? data.description : "";
   appState.backend.lastSync = new Date();
-  appState.baseExpression = baseExpressionFor(data.emotion, intensity);
+  appState.baseExpression = baseExpressionFor(data.emotion, appState.backend.intensity);
 
   robot.setBaseExpression(appState.baseExpression);
   if (appState.interaction.mode === "idle") {
@@ -873,6 +927,117 @@ function restoreIdle() {
 }
 
 /* ==========================================================================
+   Manual autonomy tick (server-side decision, front-end preview only)
+   ========================================================================== */
+
+let autonomyInFlight = false;
+
+/**
+ * Show the result of one server-side decision. This never calls TTS or the
+ * voice controller; the bubble explicitly marks the behaviour as simulated.
+ */
+function playAutonomyPreview(action) {
+  const meta = AUTONOMY_META[action] || AUTONOMY_META.idle;
+
+  cancelSimulation({ hideBubble: true });
+  const token = beginInteraction("autonomy", { autonomyAction: action });
+
+  robot.setGaze(0);
+  robot.setHeadTilt(0, meta.headLift || 0);
+
+  bubble.type({
+    label: "自主行为 · 前端模拟",
+    text: meta.bubble,
+    charDelay: 34,
+    autoHideMs: meta.duration,
+  });
+
+  updateLastEvent(`自主决策 · ${meta.label} · 前端动画模拟 · 未调用语音`);
+
+  simTimer = window.setTimeout(() => {
+    if (endInteractionIfCurrent(token)) {
+      robot.setGaze(0);
+      robot.setHeadTilt(0, 0);
+    }
+    simTimer = null;
+  }, meta.duration);
+}
+
+async function runAutonomyTick() {
+  if (autonomyInFlight) return;
+
+  let blocked = false;
+  autonomyInFlight = true;
+  autonomyTick.disabled = true;
+  clearDebugError();
+  autonomyStatus.textContent = "正在请求后端执行一次自主决策...";
+  actionDepth += 1;
+  backendEpoch += 1;
+
+  try {
+    const data = await apiRequest("/api/debug/autonomy", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Tianbao-Debug": "1",
+      },
+      body: "{}",
+    });
+
+    if (!data || typeof data.action !== "string") {
+      throw new Error("后端返回的自主决策格式不正确.");
+    }
+    if (!applyBackendState(data.state)) {
+      throw new Error("后端返回的状态格式不正确.");
+    }
+
+    setOnline(true);
+    if (connectionErrorShown) clearDebugError();
+
+    const meta = AUTONOMY_META[data.action] || AUTONOMY_META.idle;
+    const cooldown = Number(data.cooldown_remaining);
+    const cooldownText = Number.isFinite(cooldown) && cooldown > 0
+      ? ` · 主动互动冷却剩余 ${Math.ceil(cooldown)}s`
+      : "";
+    autonomyStatus.textContent = `上次决策: ${meta.label}${cooldownText}.`;
+    playAutonomyPreview(data.action);
+  } catch (error) {
+    const message = friendlyError(error);
+
+    if (error.status === 403) {
+      blocked = true;
+      autonomyStatus.textContent = "调试接口仅限本机访问.";
+      showDebugError(message);
+    } else {
+      setOnline(false);
+      autonomyStatus.textContent = "自主决策失败.";
+      showConnectionError(`自主决策请求失败: ${message}`);
+    }
+  } finally {
+    actionDepth -= 1;
+    autonomyInFlight = false;
+    autonomyTick.disabled = blocked;
+  }
+}
+
+async function refreshAutonomyStatus() {
+  try {
+    const data = await apiRequest("/api/debug/autonomy");
+    if (!data || !data.enabled) return;
+
+    const cooldown = Number(data.cooldown_remaining);
+    if (Number.isFinite(cooldown) && cooldown > 0) {
+      autonomyStatus.textContent = `主动互动冷却剩余 ${Math.ceil(cooldown)}s.`;
+    }
+  } catch (error) {
+    if (error.status === 403) {
+      autonomyTick.disabled = true;
+      autonomyStatus.textContent = "调试接口仅限本机访问.";
+    }
+  }
+}
+
+/* ==========================================================================
    Debug UI updates
    ========================================================================== */
 
@@ -904,6 +1069,8 @@ function updateDebugState() {
   const backend = appState.backend;
   dbgEmotion.textContent = EMOTION_LABEL[backend.emotion] || backend.emotion;
   dbgIntensity.textContent = backend.intensity.toFixed(1);
+  dbgEnergy.textContent = backend.energy === null ? "--" : backend.energy.toFixed(1);
+  dbgSocial.textContent = backend.socialNeed === null ? "--" : backend.socialNeed.toFixed(1);
   dbgDescription.textContent = backend.description || "正在读取 tianbao 的状态...";
   dbgSync.textContent = backend.lastSync
     ? backend.lastSync.toLocaleTimeString("zh-CN", { hour12: false })
@@ -920,6 +1087,10 @@ function updateDebugState() {
 function interactionText() {
   const interaction = appState.interaction;
 
+  if (interaction.mode === "autonomy") {
+    const meta = AUTONOMY_META[interaction.autonomyAction];
+    return `自主${meta ? meta.label : "行为"} · 模拟`;
+  }
   if (interaction.mode === "touch") {
     return `摸头中 · ${TOUCH_TIER_LABEL[interaction.touchLevel] || "轻轻摸头"}`;
   }
@@ -2186,6 +2357,7 @@ voiceRetry.addEventListener("click", respondWithVoice);
 voiceDebugRecord.addEventListener("click", handleVoiceToggle);
 voiceDebugPlay.addEventListener("click", playUserRecording);
 voiceDebugRespond.addEventListener("click", respondWithVoice);
+autonomyTick.addEventListener("click", runAutonomyTick);
 
 ttsSpeak.addEventListener("click", speakTypedText);
 ttsStop.addEventListener("click", stopVoiceOutput);
@@ -2280,4 +2452,5 @@ stage.dataset.expression = appState.baseExpression;
 world.setExpression(appState.baseExpression);
 
 pollState();
+refreshAutonomyStatus();
 window.setInterval(pollState, 1000);

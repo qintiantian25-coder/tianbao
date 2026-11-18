@@ -11,10 +11,17 @@
 状态管理交给 core/state_store.py。
 """
 
+import ipaddress
+import os
+import threading
+import time
+
 from flask import Flask, jsonify, render_template, request
 
-from core.state_store import StateStore
 from backend.tts_proxy import tts_bp
+from core.action_executor import execute_action
+from core.behavior_scheduler import BehaviorScheduler
+from core.state_store import StateStore
 
 
 # =========================
@@ -28,6 +35,19 @@ store = StateStore()
 
 # 多音色语音服务同源代理: /api/tts/status, /api/tts/voices, /api/tts
 app.register_blueprint(tts_bp)
+
+# 自主行为调度器：只在调试请求里手动 tick 一次，不启动后台线程.
+autonomy_scheduler = BehaviorScheduler(cooldown_seconds=60)
+_autonomy_debug_lock = threading.Lock()
+
+# 调试接口默认只允许本机回环地址. 受信任的开发环境如果需要从局域网访问，
+# 可以显式设置 TIANBAO_DEBUG_API=1；不要在生产环境打开.
+DEBUG_AUTONOMY_API = os.environ.get("TIANBAO_DEBUG_API", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 
 # =========================
@@ -146,7 +166,86 @@ def sad_event_api():
 
 
 # =========================
-# 7. 启动服务
+# 7. 自主行为调试（手动执行一次）
+# =========================
+
+def _is_loopback(address):
+    """判断请求来源是否为本机回环地址。"""
+    try:
+        return ipaddress.ip_address(address or "").is_loopback
+    except ValueError:
+        return False
+
+
+def autonomy_debug_allowed():
+    """调试接口默认只对本机开放，可通过环境变量显式放开。"""
+    return DEBUG_AUTONOMY_API or _is_loopback(request.remote_addr)
+
+
+def _cooldown_remaining(now):
+    """返回距离下次允许主动互动还剩多少秒。"""
+    last_interact_at = autonomy_scheduler.last_interact_at
+
+    if last_interact_at is None:
+        return 0.0
+
+    return max(
+        0.0,
+        autonomy_scheduler.cooldown_seconds - (now - last_interact_at),
+    )
+
+
+@app.route("/api/debug/autonomy", methods=["GET", "POST"])
+def debug_autonomy():
+    """仅本地开发：查看冷却状态，或手动执行一次自主决策。
+
+    GET  只返回接口可用状态和冷却剩余时间，不触发任何行为.
+    POST 使用与网页共用的 StateStore，调用现有的 BehaviorScheduler.tick()
+         和 execute_action()，执行一次后立即返回.
+    """
+
+    if not autonomy_debug_allowed():
+        return jsonify({"error": "自主行为调试接口仅限本机访问."}), 403
+
+    if request.method == "POST":
+        # 自定义请求头会让跨站表单无法直接触发这个状态修改接口.
+        if request.headers.get("X-Tianbao-Debug") != "1":
+            return jsonify({"error": "缺少调试请求标记."}), 403
+
+    if request.method == "GET":
+        now = time.monotonic()
+
+        return jsonify({
+            "enabled": True,
+            "cooldown_seconds": autonomy_scheduler.cooldown_seconds,
+            "cooldown_remaining": round(_cooldown_remaining(now), 1),
+        })
+
+    # 同一时间只允许一个手动决策，避免并发请求打乱互动冷却.
+    with _autonomy_debug_lock:
+        state = store.get_state()
+        now = time.monotonic()
+        action = autonomy_scheduler.tick(state, now)
+
+        try:
+            result = execute_action(action, store)
+        except Exception as exc:
+            app.logger.exception("自主行为执行失败")
+            return jsonify({"error": f"自主行为执行失败: {exc}"}), 500
+
+        cooldown_remaining = _cooldown_remaining(time.monotonic())
+
+    return jsonify({
+        "action": action,
+        "state": result,
+        "cooldown_seconds": autonomy_scheduler.cooldown_seconds,
+        "cooldown_remaining": round(cooldown_remaining, 1),
+        "simulated": True,
+    })
+
+
+# =========================
+# 8. 启动服务
 # =========================
 
 if __name__ == "__main__":
