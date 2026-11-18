@@ -15,7 +15,7 @@ def execute_action(action, store):
         print("我想休息一下~")
 
         # 休息恢复10点精力
-        store.apply_energy_cost(10)  
+        store.apply_energy_recovery(10)  
 
     elif action == "idle":
         print("tianbao正在安静待机...")
