@@ -1,5 +1,11 @@
-from backend.state_store import StateStore
-from action_executor import execute_action
+import sys
+from pathlib import Path
+
+# 允许直接运行: python tests/test_executor.py
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from core.state_store import StateStore
+from core.action_executor import execute_action
 
 store = StateStore()
 

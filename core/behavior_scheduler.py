@@ -1,4 +1,4 @@
-from behavior import decide_action
+from .behavior import decide_action
 
 class BehaviorScheduler:
 

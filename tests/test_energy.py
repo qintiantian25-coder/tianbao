@@ -1,4 +1,10 @@
-from backend.state_store import StateStore
+import sys
+from pathlib import Path
+
+# 允许直接运行: python tests/test_energy.py
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from core.state_store import StateStore
 
 store = StateStore()
 

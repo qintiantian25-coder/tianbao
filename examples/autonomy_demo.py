@@ -1,8 +1,13 @@
+import sys
 import time
+from pathlib import Path
 
-from backend.state_store import StateStore
-from behavior_scheduler import BehaviorScheduler
-from action_executor import execute_action
+# 直接运行脚本时，把项目根目录加入模块搜索路径
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from core.state_store import StateStore
+from core.behavior_scheduler import BehaviorScheduler
+from core.action_executor import execute_action
 
 
 store = StateStore()

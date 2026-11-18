@@ -1,8 +1,16 @@
+import sys
 import time
-from emotion import head_touch
-from emotion import sad_event
-from emotion import emotion_decay
-from emotion import emotion_expression
+from pathlib import Path
+
+# 直接运行脚本时，把项目根目录加入模块搜索路径
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from core.emotion import (
+    emotion_decay,
+    head_touch,
+    sad_event,
+    event_expression,
+)
 
 tianbao = {
     "emotion": "happy",
@@ -35,7 +43,7 @@ while True: # 持续循环，直到程序主动退出或被中断
                 print("哇呜~是超级温柔的摸摸头! tianbao要幸福得冒泡泡啦!")
             head_touch(tianbao, amount)
             print(tianbao)
-            emotion_expression(tianbao, event="touch")
+            event_expression(tianbao, event="touch")
         else:
             print("唔? 摸头程度要在1到30之间哦~")
 
@@ -66,10 +74,10 @@ while True: # 持续循环，直到程序主动退出或被中断
 
             sad_event(tianbao, amount)
             print(tianbao)
-            emotion_expression(tianbao, event="sad_event")
+            event_expression(tianbao, event="sad_event")
     elif command == "state":
         print(tianbao)
-        emotion_expression(tianbao)
+        event_expression(tianbao)
     elif command == "exit":
         print("tianbao已关闭")
         break

@@ -1,4 +1,10 @@
-from behavior import decide_action
+import sys
+from pathlib import Path
+
+# 允许直接运行: python tests/test_behavior.py
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from core.behavior import decide_action
 
 # 1. 精力不足，优先休息
 assert decide_action({

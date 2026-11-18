@@ -1,4 +1,10 @@
-from behavior_scheduler import BehaviorScheduler
+import sys
+from pathlib import Path
+
+# 允许直接运行: python tests/test_scheduler.py
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from core.behavior_scheduler import BehaviorScheduler
 
 scheduler = BehaviorScheduler(cooldown_seconds=60)
 

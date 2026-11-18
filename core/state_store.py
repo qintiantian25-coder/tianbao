@@ -1,15 +1,15 @@
 import time
 import threading
 
-from emotion import (
+from .emotion import (
     emotion_decay,
     head_touch,
     sad_event,
     state_expression,
     event_expression,
 )
-from energy import consume_energy, recover_energy
-from social import increase_social_need, reduce_social_need
+from .energy import consume_energy, recover_energy
+from .social import increase_social_need, reduce_social_need
 
 
 class StateStore:

@@ -7,13 +7,13 @@
 3. 调用 StateStore 管理机器人状态
 4. 返回 JSON 响应
 
-情绪算法保留在 emotion.py 中。
-状态管理交给 backend/state_store.py。
+情绪算法保留在 core/emotion.py 中。
+状态管理交给 core/state_store.py。
 """
 
 from flask import Flask, jsonify, render_template, request
 
-from backend.state_store import StateStore
+from core.state_store import StateStore
 from backend.tts_proxy import tts_bp
 
 
