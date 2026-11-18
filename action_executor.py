@@ -14,7 +14,8 @@ def execute_action(action, store):
     elif action == "rest":
         print("我想休息一下~")
 
-        # TODO 3：恢复 10 点精力
+        # 休息恢复10点精力
+        store.apply_energy_cost(10)  
 
     elif action == "idle":
         print("tianbao正在安静待机...")
