@@ -7,7 +7,7 @@
   <meta name="description" content="tianbao virtual V0.6 - 一个有情绪、会回应触摸、能用多种音色说话的小小陪伴机器人.">
   <title>tianbao virtual V0.6 | Interactive Companion</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2363b3a1'/%3E%3Ctext x='32' y='45' font-size='36' text-anchor='middle' fill='%23eefcf6'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/style.css?v=0.6.2">
+  <link rel="stylesheet" href="/static/style.css?v=0.6.5">
   <script type="module" src="/static/app.js?v=0.6.4"></script>
 </head>
 <body>
@@ -757,6 +757,22 @@
             <button id="restoreIdle" class="btn btn-ghost" type="button">恢复待机动画</button>
           </div>
           <p id="dbgError" class="dbg-error" role="alert" hidden></p>
+        </section>
+
+        <section class="debug-group" aria-label="服务台">
+          <div class="group-heading">
+            <span>服务台</span>
+            <span class="summary-hint">终端脚本</span>
+          </div>
+          <div class="group-body">
+            <pre class="service-commands"><code>bash scripts/dev.sh start        # 启动 HTTP :5000
+bash scripts/dev.sh start https  # 启动 HTTPS :5443
+bash scripts/dev.sh stop         # 关闭前端
+bash scripts/dev.sh restart      # 重启
+bash scripts/dev.sh status       # 查看状态
+bash scripts/dev.sh logs         # 跟踪日志</code></pre>
+            <p class="field-note">在项目根目录的终端运行; 网页控制台只显示命令, 不会执行 shell. 日志: .run/frontend.log</p>
+          </div>
         </section>
       </div>
 

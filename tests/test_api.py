@@ -44,8 +44,14 @@ for marker in (
     'data-autonomy-preset="low_energy"',
     'data-autonomy-preset="normal_idle"',
     'id="autonomyCooldownReset"',
+    'class="service-commands"',
+    "服务台",
 ):
     assert marker in html, marker
+
+styles = client.get("/static/style.css")
+assert styles.status_code == 200
+assert ".service-commands" in styles.get_data(as_text=True)
 
 script = client.get("/static/app.js")
 assert script.status_code == 200

@@ -1003,6 +1003,20 @@ textarea + .btn, select + .btn { margin-top: 10px; }
   font-size: 10.5px;
   line-height: 1.6;
 }
+.service-commands {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #e7e3d9;
+  border-radius: 10px;
+  background: #f7f8f4;
+  color: #526560;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.8;
+  overflow-x: auto;
+  white-space: pre;
+}
+.service-commands code { font: inherit; }
 .debug-footer {
   display: flex;
   align-items: center;
