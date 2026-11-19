@@ -30,6 +30,7 @@ class StateStore:
         elapsed = max(0.0, now - self._last_update)
         self._last_update = now
         emotion_decay(self.tianbao, elapsed, self.personality)
+        increase_social_need(self.tianbao, elapsed/60)  # 社交需求随时间增加
 
     def _state_data(self):
         """Return JSON-serializable state. Caller must hold _state_lock."""

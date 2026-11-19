@@ -1,12 +1,21 @@
 def decide_action(state):
     energy = state["energy"]
     emotion = state["emotion"]
+    intensity = state.get("intensity", 0)
     social_need = state["social_need"]
 
-    if energy < 30:
+    # 1. 伤心时，优先寻求安慰
+    if emotion == "sad" and intensity >= 50 and energy > 10:
+        return "seek_comfort"
+
+    # 2. 精力不足，休息
+    elif energy < 30:
         return "rest"
-    elif energy >= 70 and emotion == "happy" and social_need >= 70:
+
+    # 3. 社交需求较高，主动互动
+    elif energy >= 70 and social_need >= 70:
         return "interact"
+
+    # 4. 没有明显需求，待机
     else:
         return "idle"
-
