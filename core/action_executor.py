@@ -9,6 +9,12 @@ def execute_action(action, store):
         # 假设主人成功回应，减少20点社交需求
         store.apply_social_need_decrease(20)
 
+    elif action == "seek_comfort":
+        print("主人，我有点伤心，想要安慰~")
+
+        # 寻求安慰消耗5点精力
+        store.apply_energy_cost(1)
+
         
 
     elif action == "rest":

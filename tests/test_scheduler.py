@@ -27,4 +27,23 @@ assert scheduler.tick(state, 160) == "interact"
 state["energy"] = 20
 assert scheduler.tick(state, 170) == "rest"
 
+# 创建独立调度器，避免影响之前的测试
+comfort_scheduler = BehaviorScheduler()
+
+sad_state = {
+    "emotion": "sad",
+    "intensity": 85,
+    "energy": 80,
+    "social_need": 20
+}
+
+# 第一次请求安慰
+assert comfort_scheduler.tick(sad_state, 100) == "seek_comfort"
+
+# 20秒后，还在冷却中
+assert comfort_scheduler.tick(sad_state, 120) == "idle"
+
+# 300秒后，允许再次请求
+assert comfort_scheduler.tick(sad_state, 400) == "seek_comfort"
+
 print("自主行为调度器测试通过！")
