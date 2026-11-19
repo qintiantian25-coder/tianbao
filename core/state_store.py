@@ -14,7 +14,7 @@ from .state_dynamics import update_state_over_time
 class StateStore:
 
     def __init__(self):
-        self.tianbao = {"emotion": "happy", "intensity": 60, "energy": 80, "social_need": 20}
+        self.tianbao = {"emotion": "happy", "intensity": 60, "energy": 80, "social_need": 80}
         self.rates = {
             "happy_decay": 1 / 60,
             "sad_decay": 2 / 60,
