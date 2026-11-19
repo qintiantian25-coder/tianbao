@@ -10,13 +10,18 @@ from .emotion import (
 )
 from .energy import consume_energy, recover_energy
 from .social import increase_social_need, reduce_social_need
-
+from .state_dynamics import update_state_over_time
 
 class StateStore:
 
     def __init__(self):
         self.tianbao = {"emotion": "happy", "intensity": 60, "energy": 80, "social_need": 20}
-        self.personality = {"happy_decay": 1, "sad_decay": 4}
+        self.rates = {
+            "happy_decay": 1 / 60,
+            "sad_decay": 2 / 60,
+            "energy_recovery": 2 / 60,
+            "social_need_growth": 1 / 60
+        }
         self._last_update = time.monotonic()
         self._state_lock = threading.Lock()
 
@@ -29,8 +34,7 @@ class StateStore:
         now = time.monotonic()
         elapsed = max(0.0, now - self._last_update)
         self._last_update = now
-        emotion_decay(self.tianbao, elapsed, self.personality)
-        increase_social_need(self.tianbao, elapsed/60)  # 社交需求随时间增加
+        update_state_over_time(self.tianbao, elapsed, self.rates)
 
     def _state_data(self):
         """Return JSON-serializable state. Caller must hold _state_lock."""
