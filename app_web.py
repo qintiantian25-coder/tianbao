@@ -230,6 +230,27 @@ def _cooldown_remaining(now):
         autonomy_scheduler.cooldown_seconds - (now - last_interact_at),
     )
 
+def run_autonomy_once():
+    """执行一次自主行为决策。"""
+
+    with _autonomy_debug_lock:
+
+        # 1. 获取当前状态
+        state = store.get_state()
+
+        # 2. 获取当前时间
+        now = time.monotonic()
+
+        # 3. 自主决策
+        action = autonomy_scheduler.tick(state, now)
+
+        # 4. 执行行为
+        result = execute_action(action, store)
+
+        # 5. 获取互动冷却剩余时间
+        cooldown = _cooldown_remaining(time.monotonic())
+
+    return action, result, cooldown
 
 @app.route("/api/debug/autonomy", methods=["GET", "POST"])
 def debug_autonomy():
