@@ -6,12 +6,6 @@ def execute_action(action, store):
         # 结束休息，进入普通活动状态
         store.set_activity("idle")
 
-        # 主动互动消耗10点精力
-        store.apply_energy_cost(10)
-
-        # 暂时模拟主人成功回应
-        store.apply_social_need_decrease(20)
-
     elif action == "seek_comfort":
         print("主人，我有点伤心，想要安慰~")
 

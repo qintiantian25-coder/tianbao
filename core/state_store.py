@@ -70,7 +70,11 @@ class StateStore:
         with self._state_lock:
             self._update_elapsed_time()
 
+            # 摸头使 tianbao 更开心
             head_touch(self.tianbao, amount)
+
+            # 摸头同时满足部分社交需求
+            reduce_social_need(self.tianbao, amount)
 
             current = self._state_data()
             message = event_expression(self.tianbao, "touch")
