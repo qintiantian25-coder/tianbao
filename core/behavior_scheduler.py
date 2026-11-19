@@ -18,7 +18,14 @@ class BehaviorScheduler:
                 elapsed = now - self.last_comfort_at
 
                 if elapsed < self.comfort_cooldown_seconds:
-                    # 如果很疲惫，就先休息
+                    # 已经在休息且精力尚未恢复到70，继续休息
+                    if (
+                        state.get("activity") == "rest"
+                        and state["energy"] < 70
+                    ):
+                        return "rest"
+
+                    # 精力很低，开始休息
                     if state["energy"] < 30:
                         return "rest"
 

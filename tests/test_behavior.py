@@ -246,6 +246,59 @@ class TestBehavior(unittest.TestCase):
                 result["activity"],
                 "idle"
             )
+    def test_rest_hysteresis(self):
+        """测试开始休息、持续休息和结束休息"""
+
+        state = {
+            "emotion": "calm",
+            "intensity": 0,
+            "energy": 20,
+            "social_need": 20,
+            "activity": "idle"
+        }
+
+        # 精力不足，开始休息
+        self.assertEqual(decide_action(state), "rest")
+
+        # 正在休息，精力达到50仍继续休息
+        state["activity"] = "rest"
+        state["energy"] = 50
+
+        self.assertEqual(decide_action(state), "rest")
+
+        # 精力达到70，可以结束休息
+        state["energy"] = 70
+
+        self.assertEqual(decide_action(state), "idle")
+
+    def test_comfort_cooldown_keeps_rest(self):
+        """测试安慰冷却不会意外打断休息"""
+
+        scheduler = BehaviorScheduler()
+
+        state = {
+            "emotion": "sad",
+            "intensity": 85,
+            "energy": 80,
+            "social_need": 20,
+            "activity": "idle"
+        }
+
+        # 第一次允许寻求安慰
+        self.assertEqual(
+            scheduler.tick(state, 100),
+            "seek_comfort"
+        )
+
+        # 后来进入休息，精力恢复到50
+        state["activity"] = "rest"
+        state["energy"] = 50
+
+        # 此时安慰还在冷却中，应该继续休息
+        self.assertEqual(
+            scheduler.tick(state, 120),
+            "rest"
+        )
 
 
 if __name__ == "__main__":
