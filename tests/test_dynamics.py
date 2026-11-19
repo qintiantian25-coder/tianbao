@@ -36,4 +36,29 @@ assert result["social_need"] == 25
 # 还没有接入精力的时间变化，所以精力不变
 assert result["energy"] == 80
 
+# 测试休息5分钟
+rest_state = {
+    "emotion": "calm",
+    "intensity": 0,
+    "energy": 50,
+    "social_need": 20
+}
+
+rest_rates = {
+    "happy_decay": 1 / 60,
+    "sad_decay": 2 / 60,
+    "energy_recovery": 2 / 60,
+    "social_need_growth": 1 / 60
+}
+
+result = update_state_over_time(
+    rest_state,
+    300,
+    rest_rates,
+    activity="rest"
+)
+
+assert result["energy"] == 60
+assert result["social_need"] == 25
+
 print("状态动态系统测试通过！")

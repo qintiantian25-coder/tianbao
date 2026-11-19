@@ -12,7 +12,7 @@ def execute_action(action, store):
     elif action == "seek_comfort":
         print("主人，我有点伤心，想要安慰~")
 
-        # 寻求安慰消耗5点精力
+        # 寻求安慰消耗1点精力
         store.apply_energy_cost(1)
 
         
