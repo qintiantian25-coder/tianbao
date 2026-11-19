@@ -3,8 +3,11 @@ def execute_action(action, store):
     if action == "interact":
         print("主人，我想和你玩一会儿~")
 
-        # 结束休息，进入普通活动状态
+        # 进入普通活动状态
         store.set_activity("idle")
+
+        # 主动请求陪伴消耗10点精力
+        store.apply_energy_cost(10)
 
     elif action == "seek_comfort":
         print("主人，我有点伤心，想要安慰~")

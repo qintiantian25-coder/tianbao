@@ -1,64 +1,129 @@
+
 import sys
+import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from core.state_store import StateStore
 from core.state_dynamics import update_state_over_time
 
 
-# 初始状态
-state = {
-    "emotion": "sad",
-    "intensity": 80,
-    "energy": 80,
-    "social_need": 20
-}
+class TestDynamics(unittest.TestCase):
 
-# 每秒变化速率
-rates = {
-    "happy_decay": 1 / 60,
-    "sad_decay": 2 / 60,
-    "social_need_growth": 1 / 60
-}
+    def setUp(self):
+        # 每秒变化速率
+        self.rates = {
+            "happy_decay": 1 / 60,
+            "sad_decay": 2 / 60,
+            "energy_recovery": 2 / 60,
+            "social_need_growth": 1 / 60
+        }
 
-# 模拟经过5分钟
-result = update_state_over_time(state, 300, rates)
+    def test_emotion_and_social_growth(self):
+        """测试情绪衰减和社交需求自然增长"""
 
-print("更新后的状态：", result)
+        state = {
+            "emotion": "sad",
+            "intensity": 80,
+            "energy": 80,
+            "social_need": 20
+        }
 
-# 悲伤每分钟减少2点，5分钟减少10点
-assert result["emotion"] == "sad"
-assert result["intensity"] == 70
+        # 模拟经过5分钟
+        result = update_state_over_time(
+            state, 300, self.rates
+        )
 
-# 社交需求每分钟增加1点，5分钟增加5点
-assert result["social_need"] == 25
+        self.assertEqual(result["emotion"], "sad")
+        self.assertEqual(result["intensity"], 70)
+        self.assertEqual(result["social_need"], 25)
 
-# 还没有接入精力的时间变化，所以精力不变
-assert result["energy"] == 80
+        # 待机状态不自动恢复精力
+        self.assertEqual(result["energy"], 80)
 
-# 测试休息5分钟
-rest_state = {
-    "emotion": "calm",
-    "intensity": 0,
-    "energy": 50,
-    "social_need": 20
-}
+    def test_rest_recovery(self):
+        """测试休息时精力随时间恢复"""
 
-rest_rates = {
-    "happy_decay": 1 / 60,
-    "sad_decay": 2 / 60,
-    "energy_recovery": 2 / 60,
-    "social_need_growth": 1 / 60
-}
+        state = {
+            "emotion": "calm",
+            "intensity": 0,
+            "energy": 50,
+            "social_need": 20
+        }
 
-result = update_state_over_time(
-    rest_state,
-    300,
-    rest_rates,
-    activity="rest"
-)
+        result = update_state_over_time(
+            state,
+            300,
+            self.rates,
+            activity="rest"
+        )
 
-assert result["energy"] == 60
-assert result["social_need"] == 25
+        self.assertEqual(result["energy"], 60)
+        self.assertEqual(result["social_need"], 25)
 
-print("状态动态系统测试通过！")
+    def test_store_time_update(self):
+        """测试StateStore调用时间动态系统"""
+
+        with patch(
+            "core.state_store.time.monotonic",
+            return_value=1000.0
+        ) as clock:
+
+            store = StateStore()
+
+            before = store.get_state()
+
+            # 模拟时间前进5分钟
+            clock.return_value = 1300.0
+
+            after = store.get_state()
+
+        self.assertEqual(after["emotion"], "happy")
+        self.assertEqual(
+            after["intensity"],
+            before["intensity"] - 5
+        )
+
+        # 不依赖固定的初始社交需求
+        self.assertEqual(
+            after["social_need"],
+            min(100, before["social_need"] + 5)
+        )
+
+        self.assertEqual(after["energy"], before["energy"])
+
+    def test_activity_switch(self):
+        """测试持续休息与退出休息"""
+
+        with patch(
+            "core.state_store.time.monotonic",
+            return_value=1000.0
+        ) as clock:
+
+            store = StateStore()
+
+            # 进入休息
+            store.set_activity("rest")
+
+            # 休息5分钟
+            clock.return_value = 1300.0
+            resting = store.get_state()
+
+            # 退出休息
+            store.set_activity("idle")
+
+            # 待机5分钟
+            clock.return_value = 1600.0
+            idle = store.get_state()
+
+        self.assertEqual(resting["energy"], 90)
+        self.assertEqual(resting["activity"], "rest")
+
+        self.assertEqual(idle["energy"], 90)
+        self.assertEqual(idle["activity"], "idle")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
