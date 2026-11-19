@@ -13,6 +13,7 @@ Environment overrides:
     TIANBAO_TLS_CERT / TIANBAO_TLS_KEY   certificate paths
     TIANBAO_HOST                         default 0.0.0.0 (LAN access)
     TIANBAO_PORT                         default 5443
+    TIANBAO_AUTONOMY_INTERVAL            autonomy decision interval (default 10s)
 
 Development use only; a Flask dev server and a local certificate are not a
 production web-server setup. Do not expose this port to the internet.
@@ -24,7 +25,7 @@ from pathlib import Path
 
 from flask import send_file
 
-from app_web import app
+from app_web import app, start_autonomy_loop, stop_autonomy_loop
 
 BASE_DIR = Path(__file__).resolve().parent
 CERT_PATH = Path(os.environ.get("TIANBAO_TLS_CERT", BASE_DIR / "certs" / "dev-cert.pem"))
@@ -61,7 +62,8 @@ def dev_certificate():
     )
 
 
-if __name__ == "__main__":
+def main():
+    """HTTPS 入口：启动 Flask 和后台自主行为循环。"""
     if not CERT_PATH.is_file() or not KEY_PATH.is_file():
         print("TLS certificate not found.")
         print("Run this first:  bash scripts/make_dev_cert.sh")
@@ -80,11 +82,21 @@ if __name__ == "__main__":
     print("WSL: phones must use the Windows host LAN IP, and the certificate")
     print("must be generated with LAN_IP=<that IP> (see the docs).")
     print("This is a LAN development server, not a public deployment.")
-    app.run(
-        host=HOST,
-        port=PORT,
-        ssl_context=(str(CERT_PATH), str(KEY_PATH)),
-        debug=False,
-        use_reloader=False,
-        threaded=True,
-    )
+
+    try:
+        start_autonomy_loop()
+        # use_reloader=False 很重要：否则 reloader 的父子进程会各启动一个循环.
+        app.run(
+            host=HOST,
+            port=PORT,
+            ssl_context=(str(CERT_PATH), str(KEY_PATH)),
+            debug=False,
+            use_reloader=False,
+            threaded=True,
+        )
+    finally:
+        stop_autonomy_loop()
+
+
+if __name__ == "__main__":
+    main()

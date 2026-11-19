@@ -9,15 +9,21 @@
 
 情绪算法保留在 core/emotion.py 中。
 状态管理交给 core/state_store.py。
+
+后台自主行为:
+    两个启动入口都会显式启动一个后台循环，默认每 10 秒决策一次.
+    TIANBAO_AUTONOMY_INTERVAL 可覆盖间隔（秒）.
 """
 
 import ipaddress
+import math
 import os
 import threading
 import time
 
 from flask import Flask, jsonify, render_template, request
 
+from backend.autonomy_runner import AutonomyLoop, autonomy_logger
 from backend.tts_proxy import tts_bp
 from core.action_executor import execute_action
 from core.behavior_scheduler import BehaviorScheduler
@@ -36,9 +42,14 @@ store = StateStore()
 # 多音色语音服务同源代理: /api/tts/status, /api/tts/voices, /api/tts
 app.register_blueprint(tts_bp)
 
-# 自主行为调度器：只在调试请求里手动 tick 一次，不启动后台线程.
+# 手动调试和后台循环共用同一个调度器与 StateStore.
 autonomy_scheduler = BehaviorScheduler(cooldown_seconds=60)
-_autonomy_debug_lock = threading.Lock()
+
+# 非重入锁：保护一次完整的“读取状态 -> 决策 -> 执行”过程.
+# 持有这把锁时不要再调用 run_autonomy_once()，否则会死锁.
+_autonomy_lock = threading.Lock()
+
+DEFAULT_AUTONOMY_INTERVAL = 10.0
 
 # 调试接口默认只允许本机回环地址. 受信任的开发环境如果需要从局域网访问，
 # 可以显式设置 TIANBAO_DEBUG_API=1；不要在生产环境打开.
@@ -56,6 +67,28 @@ AUTONOMY_PRESETS = {
     "low_energy": {"energy": 20.0, "social_need": 20.0},
     "normal_idle": {"energy": 80.0, "social_need": 20.0},
 }
+
+
+def _autonomy_interval_from_env():
+    """读取后台决策间隔（秒），默认 10 秒；无效值回退默认值。"""
+    raw = os.environ.get("TIANBAO_AUTONOMY_INTERVAL")
+    if not raw:
+        return DEFAULT_AUTONOMY_INTERVAL
+
+    try:
+        interval = float(raw)
+    except (TypeError, ValueError):
+        interval = 0.0
+
+    if not math.isfinite(interval) or interval <= 0:
+        autonomy_logger.warning(
+            "TIANBAO_AUTONOMY_INTERVAL=%r 无效，使用默认 %.0f 秒",
+            raw,
+            DEFAULT_AUTONOMY_INTERVAL,
+        )
+        return DEFAULT_AUTONOMY_INTERVAL
+
+    return interval
 
 
 # =========================
@@ -230,35 +263,94 @@ def _cooldown_remaining(now):
         autonomy_scheduler.cooldown_seconds - (now - last_interact_at),
     )
 
-def run_autonomy_once():
-    """执行一次自主行为决策。"""
+def _log_background_action(action, before, after):
+    """只记录真正产生状态变化的后台行为；重复 idle/rest 不经过这里。"""
+    if action == "interact":
+        autonomy_logger.info(
+            "主动请求陪伴: 精力 %.1f -> %.1f, 社交需求 %.1f "
+            "(请求不等于主人已回应)",
+            before["energy"],
+            after["energy"],
+            after["social_need"],
+        )
+    elif action == "seek_comfort":
+        autonomy_logger.info(
+            "主动寻求安慰: 精力 %.1f -> %.1f, 情绪 %s/%.1f",
+            before["energy"],
+            after["energy"],
+            after["emotion"],
+            after["intensity"],
+        )
+    elif action == "rest":
+        autonomy_logger.info("开始休息: 精力 %.1f", after["energy"])
+    elif action == "idle":
+        autonomy_logger.info("结束休息，进入待机: 精力 %.1f", after["energy"])
 
-    with _autonomy_debug_lock:
 
-        # 1. 获取当前状态
+def run_autonomy_once(*, background=False):
+    """执行一次自主行为决策，手动调试和后台循环共用这个入口。
+
+    background=True 时只跳过“已经是 idle 的 idle”和“已经是 rest 的 rest”，
+    避免每 10 秒重复打印/重复进入同一状态；rest -> idle 等真正的状态切换
+    仍然会正常执行。
+    """
+    with _autonomy_lock:
         state = store.get_state()
-
-        # 2. 获取当前时间
         now = time.monotonic()
-
-        # 3. 自主决策
         action = autonomy_scheduler.tick(state, now)
 
-        # 4. 执行行为
-        result = execute_action(action, store)
+        repeated = (
+            background
+            and action == state.get("activity")
+            and action in ("idle", "rest")
+        )
 
-        # 5. 获取互动冷却剩余时间
+        if repeated:
+            # get_state() 已经结算了这段时间的待机/休息恢复.
+            result = store.get_state()
+            autonomy_logger.debug(
+                "自主决策: %s (activity 未变化，跳过执行)",
+                action,
+            )
+        else:
+            result = execute_action(action, store)
+            if background:
+                _log_background_action(action, state, result)
+
         cooldown = _cooldown_remaining(time.monotonic())
 
     return action, result, cooldown
+
+
+def _run_autonomy_background():
+    """后台线程入口：复用与手动调试相同的 run_autonomy_once()。"""
+    return run_autonomy_once(background=True)
+
+
+# 模块导入时只创建对象，不启动线程；由两个启动入口显式 start().
+autonomy_loop = AutonomyLoop(
+    _run_autonomy_background,
+    interval_seconds=_autonomy_interval_from_env(),
+    logger=autonomy_logger,
+)
+
+
+def start_autonomy_loop():
+    """启动后台循环；同一进程内重复调用不会创建第二个线程。"""
+    return autonomy_loop.start()
+
+
+def stop_autonomy_loop(timeout=5.0):
+    """停止后台循环；Event 会让等待立即返回。"""
+    return autonomy_loop.stop(timeout=timeout)
+
 
 @app.route("/api/debug/autonomy", methods=["GET", "POST"])
 def debug_autonomy():
     """仅本地开发：查看冷却状态，或手动执行一次自主决策。
 
     GET  只返回接口可用状态和冷却剩余时间，不触发任何行为.
-    POST 使用与网页共用的 StateStore，调用现有的 BehaviorScheduler.tick()
-         和 execute_action()，执行一次后立即返回.
+    POST 调用与后台循环共用的 run_autonomy_once()，执行一次后立即返回.
     """
 
     error = _debug_access_error()
@@ -266,27 +358,22 @@ def debug_autonomy():
         return error
 
     if request.method == "GET":
-        now = time.monotonic()
+        with _autonomy_lock:
+            now = time.monotonic()
+            cooldown_remaining = _cooldown_remaining(now)
 
         return jsonify({
             "enabled": True,
             "cooldown_seconds": autonomy_scheduler.cooldown_seconds,
-            "cooldown_remaining": round(_cooldown_remaining(now), 1),
+            "cooldown_remaining": round(cooldown_remaining, 1),
         })
 
-    # 同一时间只允许一个手动决策，避免并发请求打乱互动冷却.
-    with _autonomy_debug_lock:
-        state = store.get_state()
-        now = time.monotonic()
-        action = autonomy_scheduler.tick(state, now)
-
-        try:
-            result = execute_action(action, store)
-        except Exception as exc:
-            app.logger.exception("自主行为执行失败")
-            return jsonify({"error": f"自主行为执行失败: {exc}"}), 500
-
-        cooldown_remaining = _cooldown_remaining(time.monotonic())
+    # 与后台循环共用 run_autonomy_once()；锁在函数内部统一获取.
+    try:
+        action, result, cooldown_remaining = run_autonomy_once()
+    except Exception as exc:
+        app.logger.exception("自主行为执行失败")
+        return jsonify({"error": f"自主行为执行失败: {exc}"}), 500
 
     return jsonify({
         "action": action,
@@ -321,7 +408,7 @@ def debug_state_preset():
 
     targets = AUTONOMY_PRESETS[preset_key]
 
-    with _autonomy_debug_lock:
+    with _autonomy_lock:
         state = store.get_state()
         _apply_energy_and_social_targets(
             state,
@@ -347,7 +434,7 @@ def debug_autonomy_reset():
     if error:
         return error
 
-    with _autonomy_debug_lock:
+    with _autonomy_lock:
         autonomy_scheduler.last_interact_at = None
 
     return jsonify({
@@ -361,11 +448,21 @@ def debug_autonomy_reset():
 # 8. 启动服务
 # =========================
 
+def main():
+    """HTTP 入口：启动 Flask 和后台自主行为循环。"""
+    try:
+        start_autonomy_loop()
+        # use_reloader=False 很重要：否则 reloader 的父子进程会各启动一个循环.
+        app.run(
+            host="127.0.0.1",
+            port=5000,
+            debug=True,
+            use_reloader=False,
+            threaded=True,
+        )
+    finally:
+        stop_autonomy_loop()
+
+
 if __name__ == "__main__":
-    app.run(
-        host="127.0.0.1",
-        port=5000,
-        debug=True,
-        use_reloader=False,
-        threaded=True,
-    )
+    main()

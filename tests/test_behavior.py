@@ -1,11 +1,14 @@
 
 import sys
+import threading
+import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from backend.autonomy_runner import AutonomyLoop
 from core.behavior import decide_action
 from core.behavior_scheduler import BehaviorScheduler
 from core.action_executor import execute_action
@@ -299,6 +302,89 @@ class TestBehavior(unittest.TestCase):
             scheduler.tick(state, 120),
             "rest"
         )
+
+
+class TestAutonomyLoop(unittest.TestCase):
+    """后台循环的启动、停止、单实例和异常恢复测试。"""
+
+    def test_start_stop_and_single_instance(self):
+        calls = []
+        first_call = threading.Event()
+        logger = Mock()
+
+        def run_once():
+            calls.append(1)
+            first_call.set()
+
+        loop = AutonomyLoop(
+            run_once,
+            interval_seconds=0.01,
+            logger=logger,
+        )
+
+        self.assertFalse(loop.running)
+        self.assertFalse(loop.stop())  # 未启动时停止是安全的
+
+        self.assertTrue(loop.start())
+        self.assertTrue(first_call.wait(1.0))
+        self.assertFalse(loop.start())  # 重复 start 不会创建第二个线程
+        self.assertTrue(loop.running)
+
+        self.assertTrue(loop.stop(timeout=1.0))
+        self.assertFalse(loop.running)
+        self.assertGreaterEqual(len(calls), 1)
+
+    def test_stop_interrupts_wait(self):
+        first_call = threading.Event()
+        loop = AutonomyLoop(
+            lambda: first_call.set(),
+            interval_seconds=60,
+            logger=Mock(),
+        )
+
+        self.assertTrue(loop.start())
+        self.assertTrue(first_call.wait(1.0))
+
+        started = time.monotonic()
+        self.assertTrue(loop.stop(timeout=1.0))
+        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertFalse(loop.running)
+
+    def test_exception_does_not_kill_loop(self):
+        calls = []
+        second_call = threading.Event()
+        logger = Mock()
+
+        def run_once():
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("boom")
+            if len(calls) >= 2:
+                second_call.set()
+
+        loop = AutonomyLoop(
+            run_once,
+            interval_seconds=0.01,
+            logger=logger,
+        )
+
+        self.assertTrue(loop.start())
+        self.assertTrue(second_call.wait(1.0))
+        self.assertTrue(loop.running)
+        self.assertTrue(loop.stop(timeout=1.0))
+        self.assertGreaterEqual(len(calls), 2)
+        logger.exception.assert_called()
+
+    def test_rejects_invalid_interval(self):
+        with self.assertRaises(ValueError):
+            AutonomyLoop(lambda: None, interval_seconds=0, logger=Mock())
+
+        with self.assertRaises(ValueError):
+            AutonomyLoop(
+                lambda: None,
+                interval_seconds=float("nan"),
+                logger=Mock(),
+            )
 
 
 if __name__ == "__main__":

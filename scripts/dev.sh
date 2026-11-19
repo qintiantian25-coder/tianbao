@@ -37,7 +37,8 @@ tianbao 服务台
   https  serve_https.py  https://127.0.0.1:5443/  (需先运行 make_dev_cert.sh)
 
 环境变量:
-  PYTHON_BIN  指定 Python 解释器 (默认 python, 缺失时回退 python3)
+  PYTHON_BIN                  指定 Python 解释器 (默认 python, 缺失时回退 python3)
+  TIANBAO_AUTONOMY_INTERVAL   自主决策间隔秒数 (默认 10)
 
 运行时文件:
   PID   .run/frontend.pid

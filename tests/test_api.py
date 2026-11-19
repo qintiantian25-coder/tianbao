@@ -1,12 +1,21 @@
+import os
 import sys
+import threading
+import time
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 # 允许直接运行: python tests/test_api.py
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app_web
+import serve_https
 from core.behavior_scheduler import BehaviorScheduler
 from core.state_store import StateStore
+
+# 导入 Flask 应用不应自动启动后台线程，后台循环应指向共享决策入口.
+assert app_web.autonomy_loop.running is False
+assert app_web.autonomy_loop.run_once is app_web._run_autonomy_background
 
 client = app_web.app.test_client()
 client.environ_base["REMOTE_ADDR"] = "127.0.0.1"
@@ -267,5 +276,154 @@ non_local_reset = client.post(
     environ_overrides={"REMOTE_ADDR": "192.168.1.50"},
 )
 assert non_local_reset.status_code == 403
+
+# 15. 后台决策间隔可通过环境变量配置；无效值回退默认 10 秒
+with patch.dict(os.environ, {"TIANBAO_AUTONOMY_INTERVAL": "2.5"}):
+    assert app_web._autonomy_interval_from_env() == 2.5
+
+with patch.dict(os.environ, {"TIANBAO_AUTONOMY_INTERVAL": "bad"}):
+    with patch.object(app_web.autonomy_logger, "warning") as warning:
+        assert app_web._autonomy_interval_from_env() == 10.0
+        assert warning.called
+
+# 16. 手动接口和后台入口共用 run_autonomy_once()
+reset_runtime()
+fake_state = app_web.store.get_state()
+
+with patch.object(
+    app_web,
+    "run_autonomy_once",
+    return_value=("idle", fake_state, 0.0),
+) as shared_entry:
+    response = client.post("/api/debug/autonomy", headers=headers, json={})
+    assert response.status_code == 200
+    shared_entry.assert_called_once_with()
+
+with patch.object(
+    app_web,
+    "run_autonomy_once",
+    return_value=("idle", fake_state, 0.0),
+) as shared_entry:
+    app_web._run_autonomy_background()
+    shared_entry.assert_called_once_with(background=True)
+
+# 17. 后台模式不会重复执行已经处于 idle 的 idle
+reset_runtime()
+app_web.store.apply_social_need_decrease(20)  # 80 -> 60，低于互动阈值
+with patch.object(app_web, "execute_action") as execute:
+    action, state, _ = app_web.run_autonomy_once(background=True)
+    assert action == "idle"
+    assert state["activity"] == "idle"
+    execute.assert_not_called()
+
+# 18. 后台模式不会重复进入已经处于 rest 的 rest
+reset_runtime()
+app_web.store.apply_social_need_decrease(60)  # social -> 20
+app_web.store.set_activity("rest")
+app_web.store.apply_energy_cost(30)  # energy -> 50
+with patch.object(app_web, "execute_action") as execute:
+    action, state, _ = app_web.run_autonomy_once(background=True)
+    assert action == "rest"
+    assert state["activity"] == "rest"
+    execute.assert_not_called()
+
+# 19. 休息结束条件满足时，后台模式会正常退出 rest
+reset_runtime()
+app_web.store.apply_social_need_decrease(60)  # social -> 20
+app_web.store.set_activity("rest")  # energy 80，已经达到结束休息条件
+action, state, _ = app_web.run_autonomy_once(background=True)
+assert action == "idle"
+assert state["activity"] == "idle"
+
+# 20. 后台模式继续遵守 interact 冷却
+reset_runtime()
+app_web.store.apply_social_need_increase(20)  # social -> 100
+first_background = app_web.run_autonomy_once(background=True)
+assert first_background[0] == "interact"
+cooldown_mark = app_web.autonomy_scheduler.last_interact_at
+assert cooldown_mark is not None
+
+second_background = app_web.run_autonomy_once(background=True)
+assert second_background[0] == "idle"
+assert app_web.autonomy_scheduler.last_interact_at == cooldown_mark
+
+# 21. 并发调用被同一把非重入锁串行化
+reset_runtime()
+calls_active = 0
+max_active = 0
+active_guard = threading.Lock()
+thread_errors = []
+
+
+def fake_execute(action, store):
+    global calls_active, max_active
+
+    with active_guard:
+        calls_active += 1
+        max_active = max(max_active, calls_active)
+
+    time.sleep(0.05)
+
+    with active_guard:
+        calls_active -= 1
+
+    return store.get_state()
+
+
+barrier = threading.Barrier(2)
+
+
+def worker():
+    try:
+        barrier.wait(timeout=2)
+        app_web.run_autonomy_once(background=True)
+    except Exception as exc:
+        thread_errors.append(exc)
+
+
+with patch.object(app_web, "execute_action", side_effect=fake_execute), \
+        patch.object(app_web.autonomy_scheduler, "tick", return_value="interact"):
+    threads = [
+        threading.Thread(target=worker, daemon=True)
+        for _ in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=3)
+
+assert not thread_errors
+assert max_active == 1
+assert all(not thread.is_alive() for thread in threads)
+
+# 22. HTTP / HTTPS 入口都会启动并停止同一个后台循环
+with patch.object(app_web, "start_autonomy_loop") as start_loop, \
+        patch.object(app_web, "stop_autonomy_loop") as stop_loop, \
+        patch.object(app_web.app, "run") as run_server:
+    app_web.main()
+
+assert start_loop.call_count == 1
+assert stop_loop.call_count == 1
+assert run_server.call_count == 1
+
+cert_file = Mock()
+cert_file.is_file.return_value = True
+key_file = Mock()
+key_file.is_file.return_value = True
+
+with patch.object(serve_https, "start_autonomy_loop") as start_loop, \
+        patch.object(serve_https, "stop_autonomy_loop") as stop_loop, \
+        patch.object(serve_https.app, "run") as run_server, \
+        patch.object(serve_https, "detect_lan_ip", return_value="127.0.0.1"), \
+        patch.object(serve_https, "CERT_PATH", cert_file), \
+        patch.object(serve_https, "KEY_PATH", key_file):
+    serve_https.main()
+
+assert start_loop.call_count == 1
+assert stop_loop.call_count == 1
+assert run_server.call_count == 1
+
+# 所有测试结束后仍然没有真实启动后台线程.
+assert app_web.autonomy_loop.running is False
 
 print("后端接口集成测试通过！")
