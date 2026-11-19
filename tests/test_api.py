@@ -97,7 +97,8 @@ rest_tick = client.post("/api/debug/autonomy", headers=headers, json={})
 assert rest_tick.status_code == 200
 rest_data = rest_tick.get_json()
 assert rest_data["action"] == "rest"
-assert rest_data["state"]["energy"] == 30
+assert rest_data["state"]["energy"] == 20
+assert rest_data["state"]["activity"] == "rest"
 
 # 6. 条件不满足时保持待机
 reset_runtime()

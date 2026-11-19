@@ -23,6 +23,7 @@ class StateStore:
         }
         self._last_update = time.monotonic()
         self._state_lock = threading.Lock()
+        self.activity = "idle"
 
     def _update_elapsed_time(self):
         """Apply decay once for the time since the previous state update.
@@ -33,7 +34,7 @@ class StateStore:
         now = time.monotonic()
         elapsed = max(0.0, now - self._last_update)
         self._last_update = now
-        update_state_over_time(self.tianbao, elapsed, self.rates)
+        update_state_over_time(self.tianbao, elapsed, self.rates, activity = self.activity)
 
     def _state_data(self):
         """Return JSON-serializable state. Caller must hold _state_lock."""
@@ -42,12 +43,27 @@ class StateStore:
             "intensity": round(float(self.tianbao["intensity"]), 2),
             "energy": round(float(self.tianbao["energy"]), 2), # round(float(...),2) 保留两位小数
             "social_need": round(float(self.tianbao["social_need"]), 2),
+            "activity": self.activity,
             "description": state_expression(self.tianbao),
         }
 
     def get_state(self):
         with self._state_lock:
             self._update_elapsed_time()
+            return self._state_data()
+
+    def set_activity(self, activity):
+
+        if activity not in ("idle", "rest"):
+            raise ValueError(f"未知活动状态：{activity}")
+
+        with self._state_lock:
+            # 先按照原来的活动状态结算经过的时间
+            self._update_elapsed_time()
+
+            # 再切换到新的活动状态
+            self.activity = activity
+
             return self._state_data()
 
     def apply_touch(self, amount):
