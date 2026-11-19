@@ -28,4 +28,8 @@ def update_state_over_time(state, elapsed, rates,activity="idle"):
         recovery = elapsed * rates["energy_recovery"]
         recover_energy(state, recovery)
 
+    elif activity == "idle" and state["energy"] < 70:
+        recovery = min(70 - state["energy"], elapsed * rates["idle_energy_recovery"])
+        recover_energy(state, recovery)
+        
     return state

@@ -18,7 +18,8 @@ class TestDynamics(unittest.TestCase):
             "happy_decay": 1 / 60,
             "sad_decay": 2 / 60,
             "energy_recovery": 2 / 60,
-            "social_need_growth": 1 / 60
+            "social_need_growth": 1 / 60,
+            "idle_energy_recovery": 1 / 60
         }
 
     def test_emotion_and_social_growth(self):
@@ -62,6 +63,28 @@ class TestDynamics(unittest.TestCase):
 
         self.assertEqual(result["energy"], 60)
         self.assertEqual(result["social_need"], 25)
+
+    def test_idle_recovery(self):
+        """测试待机时的缓慢精力恢复"""
+
+        state = {
+            "emotion": "calm",
+            "intensity": 0,
+            "energy": 60,
+            "social_need": 20
+        }
+
+        # 待机5分钟：恢复5点
+        result = update_state_over_time(
+            state, 300, self.rates, activity="idle"
+        )
+        self.assertEqual(result["energy"], 65)
+
+        # 继续待机1小时：最多恢复到70
+        result = update_state_over_time(
+            state, 3600, self.rates, activity="idle"
+        )
+        self.assertEqual(result["energy"], 70)
 
     def test_store_time_update(self):
         """测试StateStore调用时间动态系统"""

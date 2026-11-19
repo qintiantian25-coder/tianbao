@@ -19,7 +19,8 @@ class StateStore:
             "happy_decay": 1 / 60,
             "sad_decay": 2 / 60,
             "energy_recovery": 2 / 60,
-            "social_need_growth": 1 / 60
+            "social_need_growth": 1 / 60,
+            "idle_energy_recovery": 1 / 60,
         }
         self._last_update = time.monotonic()
         self._state_lock = threading.Lock()
