@@ -25,11 +25,11 @@ first = client.get("/api/state")
 assert first.status_code == 200
 first_state = first.get_json()
 assert first_state["energy"] == 80
-assert first_state["social_need"] == 20
+assert first_state["social_need"] == 80
 
 second_state = client.get("/api/state").get_json()
 assert second_state["energy"] == 80
-assert second_state["social_need"] == 20
+assert second_state["social_need"] == 80
 assert app_web.autonomy_scheduler.last_interact_at is None
 
 # 2. 页面包含新增的调试字段和手动决策按钮
@@ -79,7 +79,7 @@ assert first_tick.status_code == 200
 tick_data = first_tick.get_json()
 assert tick_data["action"] == "interact"
 assert tick_data["state"]["energy"] == 70
-assert tick_data["state"]["social_need"] == 70
+assert tick_data["state"]["social_need"] == 100
 assert tick_data["cooldown_remaining"] > 0
 
 second_tick = client.post(
@@ -87,7 +87,7 @@ second_tick = client.post(
 ).get_json()
 assert second_tick["action"] == "idle"
 assert second_tick["state"]["energy"] == 70
-assert second_tick["state"]["social_need"] == 70
+assert second_tick["state"]["social_need"] == 100
 
 # 5. 精力不足时手动决策休息
 reset_runtime()
@@ -102,6 +102,7 @@ assert rest_data["state"]["activity"] == "rest"
 
 # 6. 条件不满足时保持待机
 reset_runtime()
+app_web.store.apply_social_need_decrease(60)
 idle_data = client.post(
     "/api/debug/autonomy", headers=headers, json={}
 ).get_json()
