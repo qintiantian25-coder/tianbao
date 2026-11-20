@@ -168,14 +168,24 @@ const TOUCH_TIER_LABEL = {
 };
 
 /**
- * Front-end presentation for one server-side autonomy decision.
- * The server owns the rules; this map only decides how to show the result.
+ * Front-end presentation for one autonomy action, used by both the manual
+ * debug preview and automatic background events. The server owns the rules;
+ * this map only decides how to show the result.
  */
 const AUTONOMY_META = {
   interact: {
     label: "互动",
     bubble: "主人，我想和你玩一会儿~",
-    expression: "touch_medium",
+    expression: "happy_mid",
+    headTilt: 0,
+    headLift: 1,
+    duration: 3200,
+  },
+  seek_comfort: {
+    label: "求安慰",
+    bubble: "主人，我有点伤心，想要安慰~",
+    expression: "sad_mid",
+    headTilt: 1.2,
     headLift: -2,
     duration: 3200,
   },
@@ -183,6 +193,7 @@ const AUTONOMY_META = {
     label: "休息",
     bubble: "我想休息一下~",
     expression: "calm",
+    headTilt: 0,
     headLift: -1.5,
     duration: 2800,
   },
@@ -190,10 +201,37 @@ const AUTONOMY_META = {
     label: "待机",
     bubble: "tianbao 正在安静待机...",
     expression: null,
+    headTilt: 0,
     headLift: 0,
     duration: 2200,
   },
 };
+
+const AUTONOMY_EVENT_ACTIONS = new Set([
+  "interact",
+  "seek_comfort",
+  "rest",
+  "idle",
+]);
+
+const AUTONOMY_EVENT_PRIORITY = {
+  seek_comfort: 3,
+  interact: 3,
+  rest: 2,
+  idle: 1,
+};
+
+const AUTONOMY_EVENT_TTL_MS = {
+  seek_comfort: 15000,
+  interact: 15000,
+  rest: 4000,
+  idle: 4000,
+};
+
+// null means "first load": set the cursor to the server's latest id without
+// replaying events that existed before the page opened.
+let autonomyCursor = null;
+let pendingAutonomyEvent = null;
 
 /** Display labels only; the backend owns the preset target values. */
 const AUTONOMY_PRESET_META = {
@@ -209,6 +247,7 @@ const appState = {
     intensity: 60,
     energy: null,
     socialNeed: null,
+    activity: "idle",
     description: "",
     online: null,
     lastSync: null,
@@ -231,6 +270,7 @@ function idleInteraction() {
     touchLevel: null,
     listeningTarget: null,
     speakerIdentity: "unknown",
+    autonomySource: null,
   };
 }
 
@@ -398,6 +438,10 @@ function cancelSimulation({ hideBubble = true, keepTouch = false } = {}) {
     activeTouchToken = null;
     activeVoiceToken = null;
     renderInteractionState();
+    // Clear a temporary autonomy/preview head pose before the next
+    // interaction (touch or voice) sets its own pose.
+    robot.setGaze(0);
+    robot.setHeadTilt(0, 0);
   }
 
   if (hideBubble) bubble.hide();
@@ -673,13 +717,18 @@ function applyBackendState(data) {
   if (!["happy", "sad", "calm"].includes(data.emotion)) return false;
 
   const intensity = percentOrNull(data.intensity);
+  const activity = data.activity === "rest" ? "rest" : "idle";
   appState.backend.emotion = data.emotion;
   appState.backend.intensity = intensity === null ? 0 : intensity;
   appState.backend.energy = percentOrNull(data.energy);
   appState.backend.socialNeed = percentOrNull(data.social_need);
+  appState.backend.activity = activity;
   appState.backend.description = typeof data.description === "string" ? data.description : "";
   appState.backend.lastSync = new Date();
-  appState.baseExpression = baseExpressionFor(data.emotion, appState.backend.intensity);
+  // While resting, keep a calm resting face until activity returns to idle.
+  appState.baseExpression = activity === "rest"
+    ? "calm"
+    : baseExpressionFor(data.emotion, appState.backend.intensity);
 
   robot.setBaseExpression(appState.baseExpression);
   if (appState.interaction.mode === "idle") {
@@ -696,8 +745,19 @@ async function pollState() {
   pollBusy = true;
   const epochAtStart = backendEpoch;
 
+  // One poll cycle serves both the state panel and the autonomy event
+  // stream; no second timer is created.
+  const [stateResult, eventsResult] = await Promise.allSettled([
+    apiRequest("/api/state"),
+    apiRequest(autonomyEventsUrl()),
+  ]);
+
   try {
-    const data = await apiRequest("/api/state");
+    if (stateResult.status !== "fulfilled") {
+      throw stateResult.reason || new Error("状态请求失败.");
+    }
+
+    const data = stateResult.value;
     setOnline(true);
     if (epochAtStart === backendEpoch) {
       const applied = applyBackendState(data);
@@ -710,6 +770,15 @@ async function pollState() {
   } finally {
     pollBusy = false;
   }
+
+  if (eventsResult.status === "fulfilled") {
+    processAutonomyEvents(eventsResult.value);
+  } else if (eventsResult.reason && eventsResult.reason.status === 400) {
+    // A cursor from an incompatible server generation: re-establish it.
+    autonomyCursor = null;
+  }
+
+  flushPendingAutonomyEvent();
 }
 
 async function sendTouch(amount, meta = {}) {
@@ -961,10 +1030,13 @@ function playAutonomyPreview(action) {
   const meta = AUTONOMY_META[action] || AUTONOMY_META.idle;
 
   cancelSimulation({ hideBubble: true });
-  const token = beginInteraction("autonomy", { autonomyAction: action });
+  const token = beginInteraction("autonomy", {
+    autonomyAction: action,
+    autonomySource: "preview",
+  });
 
   robot.setGaze(0);
-  robot.setHeadTilt(0, meta.headLift || 0);
+  robot.setHeadTilt(meta.headTilt || 0, meta.headLift || 0);
 
   bubble.type({
     label: "自主行为 · 前端模拟",
@@ -981,6 +1053,167 @@ function playAutonomyPreview(action) {
       robot.setHeadTilt(0, 0);
     }
     simTimer = null;
+  }, meta.duration);
+}
+
+/* ==========================================================================
+   Automatic autonomy events (backend -> browser)
+   ========================================================================== */
+
+function autonomyEventsUrl() {
+  if (autonomyCursor === null) return "/api/autonomy/events";
+  return `/api/autonomy/events?after_id=${encodeURIComponent(autonomyCursor)}`;
+}
+
+function processAutonomyEvents(data) {
+  if (!data || typeof data !== "object") return;
+
+  const latestId = Number(data.latest_id);
+  if (!Number.isInteger(latestId) || latestId < 0) return;
+
+  if (autonomyCursor === null) {
+    // First poll after opening the page: start at the current head, never
+    // replay events that happened before the page was opened.
+    autonomyCursor = latestId;
+    return;
+  }
+
+  if (data.reset === true || latestId < autonomyCursor) {
+    // The backend restarted and event ids reset, or the cursor is ahead.
+    // Re-read the new buffer from its beginning on the next poll; old
+    // pending events from the previous server generation are stale.
+    autonomyCursor = 0;
+    pendingAutonomyEvent = null;
+    return;
+  }
+
+  const previousCursor = autonomyCursor;
+  autonomyCursor = latestId;
+
+  const events = Array.isArray(data.events) ? data.events : [];
+  const fresh = events.filter((event) => {
+    if (!event || typeof event.action !== "string") return false;
+    if (!AUTONOMY_EVENT_ACTIONS.has(event.action)) return false;
+
+    const id = Number(event.id);
+    return Number.isInteger(id) && id > previousCursor;
+  });
+
+  if (!fresh.length) return;
+
+  // Coalesce to one event per poll. A dropped/overflowed backlog keeps only
+  // the newest event, so a burst never becomes a queue of stale bubbles.
+  const backlog = data.dropped === true || fresh.length > 3;
+  let chosen = fresh[fresh.length - 1];
+
+  if (!backlog) {
+    chosen = fresh[0];
+    for (const event of fresh.slice(1)) {
+      const priority = AUTONOMY_EVENT_PRIORITY[event.action] || 0;
+      const chosenPriority = AUTONOMY_EVENT_PRIORITY[chosen.action] || 0;
+      if (priority >= chosenPriority) chosen = event;
+    }
+  }
+
+  queueAutonomyEvent(chosen);
+}
+
+function queueAutonomyEvent(event) {
+  const priority = AUTONOMY_EVENT_PRIORITY[event.action] || 0;
+  if (!priority) return;
+
+  const now = performance.now();
+  if (pendingAutonomyEvent && isAutonomyEventExpired(pendingAutonomyEvent, now)) {
+    pendingAutonomyEvent = null;
+  }
+
+  // While the owner is busy, do not trade an important pending event for a
+  // newer but lower-priority one.
+  if (pendingAutonomyEvent && pendingAutonomyEvent.priority > priority) {
+    return;
+  }
+
+  pendingAutonomyEvent = {
+    id: Number(event.id),
+    action: event.action,
+    message: typeof event.message === "string" ? event.message : "",
+    priority,
+    queuedAt: now,
+  };
+}
+
+function autonomyEventTtl(action) {
+  return AUTONOMY_EVENT_TTL_MS[action] || 4000;
+}
+
+function isAutonomyEventExpired(event, now = performance.now()) {
+  return now - event.queuedAt > autonomyEventTtl(event.action);
+}
+
+function autonomyInteractionBusy() {
+  if (document.hidden) return true;
+  if (appState.view === "3d") return true;
+  if (appState.interaction.mode !== "idle") return true;
+  if (bubble.isVisible) return true;
+  if (actionDepth > 0) return true;
+  if (autonomyInFlight) return true;
+  if (simTimer) return true;
+  if (designPetActive) return true;
+  if (voiceResponseActive) return true;
+  if (voice.isRecording || voice.isPlaying) return true;
+
+  const voiceState = voice.snapshot();
+  return voiceState.isSpeaking || voiceState.state === "processing";
+}
+
+function flushPendingAutonomyEvent() {
+  if (!pendingAutonomyEvent) return;
+
+  const now = performance.now();
+  if (isAutonomyEventExpired(pendingAutonomyEvent, now)) {
+    updateLastEvent(`自主事件已过期，跳过: ${pendingAutonomyEvent.action}`);
+    pendingAutonomyEvent = null;
+    return;
+  }
+
+  if (autonomyInteractionBusy()) return;
+
+  const event = pendingAutonomyEvent;
+  pendingAutonomyEvent = null;
+  playAutonomyEvent(event);
+}
+
+function playAutonomyEvent(event) {
+  const meta = AUTONOMY_META[event.action];
+  if (!meta) return;
+
+  // Deliberately do not call cancelSimulation(): a background event must
+  // never cancel an owner interaction. autonomyInteractionBusy() has already
+  // established that no interaction is active.
+  const token = beginInteraction("autonomy", {
+    autonomyAction: event.action,
+    autonomySource: "event",
+  });
+
+  robot.setGaze(0);
+  robot.setHeadTilt(meta.headTilt || 0, meta.headLift || 0);
+
+  bubble.type({
+    label: "tianbao",
+    text: event.message || meta.bubble,
+    charDelay: 34,
+    autoHideMs: meta.duration,
+  });
+
+  updateLastEvent(`自主事件 #${event.id} · ${meta.label}`);
+
+  simTimer = window.setTimeout(() => {
+    if (endInteractionIfCurrent(token)) {
+      robot.setGaze(0);
+      robot.setHeadTilt(0, 0);
+    }
+    simTimer = null;
+    flushPendingAutonomyEvent();
   }, meta.duration);
 }
 
@@ -1228,7 +1461,8 @@ function interactionText() {
 
   if (interaction.mode === "autonomy") {
     const meta = AUTONOMY_META[interaction.autonomyAction];
-    return `自主${meta ? meta.label : "行为"} · 模拟`;
+    const suffix = interaction.autonomySource === "event" ? "自动" : "模拟";
+    return `自主${meta ? meta.label : "行为"} · ${suffix}`;
   }
   if (interaction.mode === "touch") {
     return `摸头中 · ${TOUCH_TIER_LABEL[interaction.touchLevel] || "轻轻摸头"}`;
@@ -2573,7 +2807,12 @@ listenInput.addEventListener("keydown", (event) => {
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) pollState();
+  if (!document.hidden) {
+    // Do not replay a backlog of events accumulated while the tab was hidden.
+    autonomyCursor = null;
+    pendingAutonomyEvent = null;
+    pollState();
+  }
 });
 
 /* ==========================================================================

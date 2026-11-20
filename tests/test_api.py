@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app_web
 import serve_https
+from backend.autonomy_events import AutonomyEventBuffer
 from core.behavior_scheduler import BehaviorScheduler
 from core.state_store import StateStore
 
@@ -22,9 +23,10 @@ client.environ_base["REMOTE_ADDR"] = "127.0.0.1"
 
 
 def reset_runtime():
-    """每个接口测试使用新的状态和冷却计时，避免相互影响。"""
+    """每个接口测试使用新的状态、冷却和事件队列，避免相互影响。"""
     app_web.store = StateStore()
     app_web.autonomy_scheduler = BehaviorScheduler(cooldown_seconds=60)
+    app_web.autonomy_events = AutonomyEventBuffer(capacity=100)
     app_web.DEBUG_AUTONOMY_API = False
 
 
@@ -67,7 +69,15 @@ assert script.status_code == 200
 script_text = script.get_data(as_text=True)
 assert "/api/debug/autonomy" in script_text
 assert "/api/debug/state/preset" in script_text
+assert "/api/autonomy/events" in script_text
 assert "AUTONOMY_META" in script_text
+assert "seek_comfort" in script_text
+assert "autonomyInteractionBusy" in script_text
+assert "pendingAutonomyEvent" in script_text
+assert "AUTONOMY_EVENT_TTL_MS" in script_text
+assert 'appState.interaction.mode !== "idle"' in script_text
+assert "voiceResponseActive" in script_text
+assert "designPetActive" in script_text
 
 # 3. 本机 GET 调试状态可用，而且不会触发行为
 status = client.get("/api/debug/autonomy")
@@ -316,6 +326,8 @@ with patch.object(app_web, "execute_action") as execute:
     assert state["activity"] == "idle"
     execute.assert_not_called()
 
+assert app_web.autonomy_events.latest_id == 0  # 重复 idle 不产生事件
+
 # 18. 后台模式不会重复进入已经处于 rest 的 rest
 reset_runtime()
 app_web.store.apply_social_need_decrease(60)  # social -> 20
@@ -327,6 +339,8 @@ with patch.object(app_web, "execute_action") as execute:
     assert state["activity"] == "rest"
     execute.assert_not_called()
 
+assert app_web.autonomy_events.latest_id == 0  # 持续 rest 不产生事件
+
 # 19. 休息结束条件满足时，后台模式会正常退出 rest
 reset_runtime()
 app_web.store.apply_social_need_decrease(60)  # social -> 20
@@ -334,6 +348,10 @@ app_web.store.set_activity("rest")  # energy 80，已经达到结束休息条件
 action, state, _ = app_web.run_autonomy_once(background=True)
 assert action == "idle"
 assert state["activity"] == "idle"
+exit_events = app_web.autonomy_events.read(0)["events"]
+assert len(exit_events) == 1
+assert exit_events[0]["action"] == "idle"
+assert exit_events[0]["source"] == "background"
 
 # 20. 后台模式继续遵守 interact 冷却
 reset_runtime()
@@ -343,9 +361,37 @@ assert first_background[0] == "interact"
 cooldown_mark = app_web.autonomy_scheduler.last_interact_at
 assert cooldown_mark is not None
 
+interact_events = app_web.autonomy_events.read(0)["events"]
+assert len(interact_events) == 1
+assert interact_events[0]["action"] == "interact"
+assert "玩" in interact_events[0]["message"]
+
 second_background = app_web.run_autonomy_once(background=True)
 assert second_background[0] == "idle"
 assert app_web.autonomy_scheduler.last_interact_at == cooldown_mark
+assert app_web.autonomy_events.latest_id == 1  # 冷却期间的 idle 不产生事件
+
+# 20b. 开始休息和寻求安慰也只在真实执行时产生事件
+reset_runtime()
+app_web.store.apply_energy_cost(60)  # energy -> 20
+rest_action, rest_state, _ = app_web.run_autonomy_once(background=True)
+assert rest_action == "rest"
+assert rest_state["activity"] == "rest"
+rest_events = app_web.autonomy_events.read(0)["events"]
+assert len(rest_events) == 1
+assert rest_events[0]["action"] == "rest"
+assert "休息" in rest_events[0]["message"]
+
+reset_runtime()
+app_web.store.apply_sad_event(80)
+app_web.store.apply_sad_event(80)
+comfort_action, comfort_state, _ = app_web.run_autonomy_once(background=True)
+assert comfort_action == "seek_comfort"
+assert comfort_state["emotion"] == "sad"
+comfort_events = app_web.autonomy_events.read(0)["events"]
+assert len(comfort_events) == 1
+assert comfort_events[0]["action"] == "seek_comfort"
+assert "安慰" in comfort_events[0]["message"]
 
 # 21. 并发调用被同一把非重入锁串行化
 reset_runtime()
@@ -425,5 +471,131 @@ assert run_server.call_count == 1
 
 # 所有测试结束后仍然没有真实启动后台线程.
 assert app_web.autonomy_loop.running is False
+
+# 23. 事件缓冲区：编号递增、只读快照、容量上限、首次加载语义
+buffer = AutonomyEventBuffer(capacity=3)
+assert buffer.latest_id == 0
+
+first_event = buffer.publish("interact", "hello")
+assert first_event["id"] == 1
+assert first_event["action"] == "interact"
+assert first_event["source"] == "background"
+assert isinstance(first_event["created_at"], float)
+
+buffer.publish("rest", "rest")
+buffer.publish("idle", "idle")
+
+snapshot_a = buffer.read(0)
+snapshot_b = buffer.read(0)
+assert [event["id"] for event in snapshot_a["events"]] == [1, 2, 3]
+assert snapshot_a == snapshot_b  # 读取不会删除事件
+assert buffer.latest_id == 3
+
+buffer.publish("interact", "four")
+buffer.publish("seek_comfort", "five")
+overflow = buffer.read(0)
+assert [event["id"] for event in overflow["events"]] == [3, 4, 5]
+assert overflow["latest_id"] == 5
+assert overflow["dropped"] is True
+assert buffer.read(5)["events"] == []
+
+ahead = buffer.read(99)
+assert ahead["reset"] is True
+assert ahead["latest_id"] == 5
+
+buffer.reset()
+assert buffer.latest_id == 0
+assert buffer.read(0)["events"] == []
+assert buffer.read(None) == {
+    "events": [],
+    "latest_id": 0,
+    "oldest_id": 0,
+    "dropped": False,
+    "reset": False,
+}
+
+buffer.publish("rest", "history")
+first_load = buffer.read(None)
+assert first_load["events"] == []
+assert first_load["latest_id"] == 1
+
+# 24. 事件接口：首次加载不回放、游标读取、多客户端互不影响
+reset_runtime()
+app_web.store.apply_social_need_increase(20)  # social -> 100
+app_web.run_autonomy_once(background=True)     # 发布 id=1
+
+first_load = client.get("/api/autonomy/events")
+assert first_load.status_code == 200
+first_payload = first_load.get_json()
+assert first_payload["events"] == []
+assert first_payload["latest_id"] == 1
+
+cursor = first_payload["latest_id"]
+empty = client.get(f"/api/autonomy/events?after_id={cursor}").get_json()
+assert empty["events"] == []
+
+app_web.autonomy_events.publish("rest", "forced rest")
+
+client_a = app_web.app.test_client()
+client_b = app_web.app.test_client()
+read_a = client_a.get("/api/autonomy/events?after_id=0").get_json()
+read_b = client_b.get("/api/autonomy/events?after_id=0").get_json()
+assert [event["id"] for event in read_a["events"]] == [1, 2]
+assert read_a == read_b
+assert client_a.get("/api/autonomy/events?after_id=0").get_json() == read_a
+
+new_events = client.get(f"/api/autonomy/events?after_id={cursor}").get_json()
+assert [event["action"] for event in new_events["events"]] == ["rest"]
+assert new_events["latest_id"] == 2
+
+# 25. 非法游标、容量溢出和重启后的编号重置
+assert client.get("/api/autonomy/events?after_id=abc").status_code == 400
+assert client.get("/api/autonomy/events?after_id=-1").status_code == 400
+
+app_web.autonomy_events = AutonomyEventBuffer(capacity=3)
+for index in range(5):
+    app_web.autonomy_events.publish("interact", f"m{index}")
+
+overflow_payload = client.get("/api/autonomy/events?after_id=0").get_json()
+assert [event["id"] for event in overflow_payload["events"]] == [3, 4, 5]
+assert overflow_payload["dropped"] is True
+
+app_web.autonomy_events = AutonomyEventBuffer(capacity=10)
+restart_payload = client.get("/api/autonomy/events?after_id=5").get_json()
+assert restart_payload["reset"] is True
+assert restart_payload["latest_id"] == 0
+assert restart_payload["events"] == []
+
+app_web.autonomy_events.publish("idle", "after restart")
+after_restart = client.get("/api/autonomy/events?after_id=0").get_json()
+assert [event["action"] for event in after_restart["events"]] == ["idle"]
+
+# 26. 手动调试不会发布后台事件
+reset_runtime()
+app_web.store.apply_social_need_increase(20)
+manual = client.post("/api/debug/autonomy", headers=headers, json={})
+assert manual.status_code == 200
+assert manual.get_json()["action"] == "interact"
+assert app_web.autonomy_events.latest_id == 0
+
+# 27. 事件接口只读，不触发决策或修改机器人状态
+reset_runtime()
+before_state = app_web.store.get_state()
+with patch.object(app_web, "run_autonomy_once") as shared_entry:
+    event_response = client.get("/api/autonomy/events")
+    assert event_response.status_code == 200
+    shared_entry.assert_not_called()
+
+after_state = app_web.store.get_state()
+assert after_state["activity"] == before_state["activity"] == "idle"
+assert after_state["energy"] == before_state["energy"] == 80
+assert app_web.autonomy_scheduler.last_interact_at is None
+
+# 28. HTTP 与 HTTPS 入口共享同一个只读事件接口
+assert serve_https.app is app_web.app
+https_client = serve_https.app.test_client()
+https_events = https_client.get("/api/autonomy/events")
+assert https_events.status_code == 200
+assert https_events.get_json()["latest_id"] == 0
 
 print("后端接口集成测试通过！")

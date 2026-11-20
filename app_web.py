@@ -23,6 +23,7 @@ import time
 
 from flask import Flask, jsonify, render_template, request
 
+from backend.autonomy_events import AutonomyEventBuffer
 from backend.autonomy_runner import AutonomyLoop, autonomy_logger
 from backend.tts_proxy import tts_bp
 from core.action_executor import execute_action
@@ -50,6 +51,16 @@ autonomy_scheduler = BehaviorScheduler(cooldown_seconds=60)
 _autonomy_lock = threading.Lock()
 
 DEFAULT_AUTONOMY_INTERVAL = 10.0
+
+# 自主行为事件缓冲区：只保存展示文案，不保存对话、录音或状态细节.
+autonomy_events = AutonomyEventBuffer(capacity=100)
+
+AUTONOMY_EVENT_MESSAGES = {
+    "interact": "主人，我想和你玩一会儿~",
+    "seek_comfort": "主人，我有点伤心，想要安慰~",
+    "rest": "我想休息一下~",
+    "idle": "休息好啦，tianbao 又精神啦~",
+}
 
 # 调试接口默认只允许本机回环地址. 受信任的开发环境如果需要从局域网访问，
 # 可以显式设置 TIANBAO_DEBUG_API=1；不要在生产环境打开.
@@ -207,7 +218,7 @@ def sad_event_api():
 
 
 # =========================
-# 7. 自主行为调试（手动执行一次）
+# 7. 自主行为（事件与调试）
 # =========================
 
 def _is_loopback(address):
@@ -263,6 +274,20 @@ def _cooldown_remaining(now):
         autonomy_scheduler.cooldown_seconds - (now - last_interact_at),
     )
 
+
+def _publish_autonomy_event(action):
+    """发布一条后台自主行为事件；只在实际执行成功后调用。"""
+    message = AUTONOMY_EVENT_MESSAGES.get(action)
+    if message is None:
+        return
+
+    try:
+        autonomy_events.publish(action, message, source="background")
+    except Exception:
+        # 事件通知失败不应影响已经执行完成的行为.
+        autonomy_logger.exception("自主行为事件发布失败")
+
+
 def _log_background_action(action, before, after):
     """只记录真正产生状态变化的后台行为；重复 idle/rest 不经过这里。"""
     if action == "interact":
@@ -316,6 +341,7 @@ def run_autonomy_once(*, background=False):
             result = execute_action(action, store)
             if background:
                 _log_background_action(action, state, result)
+                _publish_autonomy_event(action)
 
         cooldown = _cooldown_remaining(time.monotonic())
 
@@ -343,6 +369,25 @@ def start_autonomy_loop():
 def stop_autonomy_loop(timeout=5.0):
     """停止后台循环；Event 会让等待立即返回。"""
     return autonomy_loop.stop(timeout=timeout)
+
+
+@app.get("/api/autonomy/events")
+def get_autonomy_events():
+    """只读：返回 after_id 之后的后台自主行为事件，不触发任何决策。"""
+    raw_after = request.args.get("after_id")
+
+    if raw_after is None:
+        after_id = None
+    else:
+        try:
+            after_id = int(raw_after)
+        except (TypeError, ValueError):
+            return jsonify({"error": "after_id 必须是整数."}), 400
+
+        if after_id < 0:
+            return jsonify({"error": "after_id 不能为负数."}), 400
+
+    return jsonify(autonomy_events.read(after_id))
 
 
 @app.route("/api/debug/autonomy", methods=["GET", "POST"])
