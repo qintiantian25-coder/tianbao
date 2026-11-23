@@ -85,6 +85,8 @@ assert "designPetActive" in script_text
 assert "updateCompanionRequest" in script_text
 assert "request_accepted" in script_text
 assert "isInvitationStillRelevant" in script_text
+assert "data.executed === false" in script_text
+assert "已有待回应请求，未重复发起" in script_text
 
 # 3. 本机 GET 调试状态可用，而且不会触发行为
 status = client.get("/api/debug/autonomy")
@@ -312,11 +314,16 @@ fake_state = app_web.store.get_state()
 with patch.object(
     app_web,
     "run_autonomy_once",
-    return_value=("idle", fake_state, 0.0),
+    return_value=(
+        "idle",
+        fake_state,
+        0.0,
+        {"executed": True, "request_created": False},
+    ),
 ) as shared_entry:
     response = client.post("/api/debug/autonomy", headers=headers, json={})
     assert response.status_code == 200
-    shared_entry.assert_called_once_with()
+    shared_entry.assert_called_once_with(with_info=True)
 
 with patch.object(
     app_web,
@@ -740,6 +747,8 @@ manual_first = client.post(
     "/api/debug/autonomy", headers=headers, json={}
 ).get_json()
 assert manual_first["action"] == "interact"
+assert manual_first["executed"] is True
+assert manual_first["request_created"] is True
 manual_energy = manual_first["state"]["energy"]
 assert app_web.autonomy_events.latest_id == 0
 
@@ -748,9 +757,21 @@ manual_second = client.post(
     "/api/debug/autonomy", headers=headers, json={}
 ).get_json()
 assert manual_second["action"] == "interact"  # 决策动作保留
+assert manual_second["executed"] is False
+assert manual_second["request_created"] is False
 assert manual_second["state"]["energy"] == manual_energy
 assert app_web.autonomy_events.latest_id == 0
 assert app_web.companion_tracker.get_current(time.monotonic())["id"] == 1
 assert app_web.companion_tracker.next_request_id == 2
+
+# 没有陪伴请求的普通 idle 仍然算“实际执行”，只是没有新建请求.
+reset_runtime()
+app_web.store.apply_social_need_decrease(60)
+idle_debug = client.post(
+    "/api/debug/autonomy", headers=headers, json={}
+).get_json()
+assert idle_debug["action"] == "idle"
+assert idle_debug["executed"] is True
+assert idle_debug["request_created"] is False
 
 print("后端接口集成测试通过！")

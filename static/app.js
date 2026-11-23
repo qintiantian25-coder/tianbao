@@ -1365,8 +1365,16 @@ async function runAutonomyTick() {
     const cooldownText = Number.isFinite(cooldown) && cooldown > 0
       ? ` · 主动互动冷却剩余 ${Math.ceil(cooldown)}s`
       : "";
-    autonomyStatus.textContent = `上次决策: ${meta.label}${cooldownText}.`;
-    playAutonomyPreview(data.action);
+
+    // executed === false means the decision was deduplicated, typically
+    // because a same-action companion request is still pending. Keep the
+    // decision text but never replay a new invitation preview.
+    if (data.executed === false) {
+      autonomyStatus.textContent = "已有待回应请求，未重复发起.";
+    } else {
+      autonomyStatus.textContent = `上次决策: ${meta.label}${cooldownText}.`;
+      playAutonomyPreview(data.action);
+    }
   } catch (error) {
     const message = friendlyError(error);
 

@@ -381,7 +381,7 @@ def _log_background_action(action, before, after):
         autonomy_logger.info("结束休息，进入待机: 精力 %.1f", after["energy"])
 
 
-def run_autonomy_once(*, background=False):
+def run_autonomy_once(*, background=False, with_info=False):
     """执行一次自主行为决策，手动调试和后台循环共用这个入口。
 
     background=True 时只跳过“已经是 idle 的 idle”和“已经是 rest 的 rest”，
@@ -392,6 +392,9 @@ def run_autonomy_once(*, background=False):
     只有创建了新请求才执行动作并扣精力（后台模式才发布邀请事件）；
     同类型 pending 请求重复出现时跳过执行（不扣精力、不发事件），但保留
     decision 作为返回值以兼容手动调试 API。
+
+    with_info=True 时额外返回第四个字典，供调试 API 区分“决策结果”和
+    “实际执行结果”；默认仍返回原来的三元组。
     """
     with _autonomy_lock:
         state = store.get_state()
@@ -403,6 +406,8 @@ def run_autonomy_once(*, background=False):
             and decision == state.get("activity")
             and decision in ("idle", "rest")
         )
+        executed = False
+        request_created = False
 
         if repeated:
             # get_state() 已经结算了这段时间的待机/休息恢复.
@@ -420,11 +425,12 @@ def run_autonomy_once(*, background=False):
             if decision in ("interact", "seek_comfort"):
                 before = companion_tracker.get_current(now)
                 request = companion_tracker.start(decision, now)
-                should_execute = _is_new_companion_request(
+                request_created = _is_new_companion_request(
                     before,
                     request,
                     decision,
                 )
+                should_execute = request_created
                 request_id = request.get("id") if request else None
 
                 if not should_execute:
@@ -439,12 +445,19 @@ def run_autonomy_once(*, background=False):
 
             if should_execute:
                 result = execute_action(action, store)
+                executed = True
                 if background:
                     _log_background_action(action, state, result)
                     _publish_autonomy_event(action, request_id)
 
         cooldown = _cooldown_remaining(time.monotonic())
+        execution_info = {
+            "executed": executed,
+            "request_created": request_created,
+        }
 
+    if with_info:
+        return action, result, cooldown, execution_info
     return action, result, cooldown
 
 
@@ -515,7 +528,9 @@ def debug_autonomy():
 
     # 与后台循环共用 run_autonomy_once()；锁在函数内部统一获取.
     try:
-        action, result, cooldown_remaining = run_autonomy_once()
+        action, result, cooldown_remaining, execution_info = run_autonomy_once(
+            with_info=True,
+        )
     except Exception as exc:
         app.logger.exception("自主行为执行失败")
         return jsonify({"error": f"自主行为执行失败: {exc}"}), 500
@@ -526,6 +541,8 @@ def debug_autonomy():
         "cooldown_seconds": autonomy_scheduler.cooldown_seconds,
         "cooldown_remaining": round(cooldown_remaining, 1),
         "simulated": True,
+        "executed": execution_info["executed"],
+        "request_created": execution_info["request_created"],
     })
 
 
