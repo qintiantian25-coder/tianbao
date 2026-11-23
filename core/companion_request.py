@@ -50,4 +50,14 @@ class CompanionRequestTracker:
         if self.current_request["status"] == "pending" and now >= self.current_request["expires_at"]:
             self.current_request["status"] = "expired"
 
+    def get_current(self, now):
+        with self.lock:
+            self._refresh(now)
+            if self.current_request is None:
+                return None
+            else:
+                return self.current_request.copy()
+                
+
+
 
