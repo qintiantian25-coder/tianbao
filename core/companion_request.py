@@ -31,7 +31,7 @@ class CompanionRequestTracker:
                 and self.current_request["status"] == "pending"
                 and action == self.current_request["action"]
             ):
-                return self.current_request
+                return self.current_request.copy()
             else:
                 self.current_request = {
                     "id": self.next_request_id,
