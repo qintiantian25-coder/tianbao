@@ -60,5 +60,12 @@ class CompanionRequestTracker:
                 return self.current_request.copy()
                 
 
-
-
+    def respond(self, now):
+        with self.lock:
+            self._refresh(now)
+            if self.current_request is None:
+                return False
+            if self.current_request["status"] != "pending":
+                return False
+            self.current_request["status"] = "responded"
+            return True
