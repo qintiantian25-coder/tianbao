@@ -14,14 +14,11 @@ from core.behavior_scheduler import BehaviorScheduler
 from core.action_executor import execute_action
 from core.state_store import StateStore
 from core.companion_request import CompanionRequestTracker
+from core.companion_session import CompanionSession
 
 
 class TestBehavior(unittest.TestCase):
     """自主行为决策、调度及执行测试。"""
-
-    # =========================
-    # 1. 行为决策测试
-    # =========================
 
     def test_decision(self):
         """测试不同状态下的行为选择"""
@@ -53,10 +50,6 @@ class TestBehavior(unittest.TestCase):
                 }
                 self.assertEqual(decide_action(state), expected)
 
-    # =========================
-    # 2. 自主行为调度测试
-    # =========================
-
     def test_scheduler_interact(self):
         """测试普通互动冷却时间"""
         scheduler = BehaviorScheduler(cooldown_seconds=60)
@@ -86,13 +79,18 @@ class TestBehavior(unittest.TestCase):
             "social_need": 20
         }
 
-        self.assertEqual(scheduler.tick(state, 100), "seek_comfort")
-        self.assertEqual(scheduler.tick(state, 120), "idle")
-        self.assertEqual(scheduler.tick(state, 400), "seek_comfort")
-
-    # =========================
-    # 3. 行为执行器测试
-    # =========================
+        self.assertEqual(
+            scheduler.tick(state, 100),
+            "seek_comfort"
+        )
+        self.assertEqual(
+            scheduler.tick(state, 120),
+            "idle"
+        )
+        self.assertEqual(
+            scheduler.tick(state, 400),
+            "seek_comfort"
+        )
 
     def test_executor_interact_and_rest(self):
         """测试互动、休息与待机"""
@@ -110,8 +108,6 @@ class TestBehavior(unittest.TestCase):
                 result["energy"],
                 before["energy"] - 10
             )
-
-            # 请求陪伴不会立即降低社交需求
             self.assertEqual(
                 result["social_need"],
                 before["social_need"]
@@ -141,7 +137,9 @@ class TestBehavior(unittest.TestCase):
             before = store.get_state()
             self.assertEqual(before["emotion"], "sad")
 
-            result = execute_action("seek_comfort", store)
+            result = execute_action(
+                "seek_comfort", store
+            )
 
             self.assertEqual(
                 result["energy"],
@@ -288,41 +286,22 @@ class TestAutonomyLoop(unittest.TestCase):
 
 
 # ==========================================
-# 4. v0.3 主人回应请求管理器测试
+# v0.3 主人请求管理器测试
 # ==========================================
 
 class TestCompanionRequestTracker(unittest.TestCase):
-    """
-    测试主人请求管理机制。
-
-    包含：
-    1. 初始化
-    2. 请求创建
-    3. 重复请求
-    4. 不同请求替换
-    5. 超时
-    6. 过期后重新创建
-    7. 主人成功回应
-    8. 过期边界
-    9. 超时回应
-    10. 回应后新建请求
-    11. 字典副本保护
-    12. 并发安全
-    """
+    """主人邀请、有效期、回应及并发测试。"""
 
     def setUp(self):
-        """每个测试使用独立的请求管理器"""
         self.tracker = CompanionRequestTracker()
 
     def test_initial_state_and_default_timeout(self):
-        """测试初始化状态和默认300秒有效期"""
         self.assertEqual(self.tracker.timeout_seconds, 300)
         self.assertEqual(self.tracker.next_request_id, 1)
         self.assertIsNone(self.tracker.get_current(1000))
         self.assertFalse(self.tracker.respond(1000))
 
     def test_start_creates_request(self):
-        """测试创建新请求"""
         req = self.tracker.start("interact", 1000)
 
         self.assertEqual(req, {
@@ -332,11 +311,9 @@ class TestCompanionRequestTracker(unittest.TestCase):
             "expires_at": 1300,
             "status": "pending",
         })
-
         self.assertEqual(self.tracker.next_request_id, 2)
 
     def test_duplicate_pending_keeps_id_and_expiration(self):
-        """相同有效请求不应重新创建或重置时间"""
         first = self.tracker.start("interact", 1000)
         second = self.tracker.start("interact", 1200)
 
@@ -345,7 +322,6 @@ class TestCompanionRequestTracker(unittest.TestCase):
         self.assertEqual(self.tracker.next_request_id, 2)
 
     def test_different_action_replaces_pending(self):
-        """不同类型请求可以替换当前请求"""
         first = self.tracker.start("interact", 1000)
         second = self.tracker.start("seek_comfort", 1001)
 
@@ -355,28 +331,23 @@ class TestCompanionRequestTracker(unittest.TestCase):
         self.assertEqual(second["status"], "pending")
 
     def test_refresh_before_and_at_expiration(self):
-        """测试300秒过期边界"""
         self.tracker.start("interact", 1000)
 
         self.assertEqual(
             self.tracker.get_current(1299)["status"],
             "pending"
         )
-
         self.assertEqual(
             self.tracker.get_current(1300)["status"],
             "expired"
         )
-
         self.assertEqual(
             self.tracker.get_current(1400)["status"],
             "expired"
         )
 
     def test_expired_request_can_be_replaced_with_same_action(self):
-        """过期后允许创建同类型的新请求"""
         self.tracker.start("interact", 1000)
-
         req = self.tracker.start("interact", 1300)
 
         self.assertEqual(req["id"], 2)
@@ -384,16 +355,13 @@ class TestCompanionRequestTracker(unittest.TestCase):
         self.assertEqual(req["status"], "pending")
 
     def test_response_success_and_only_once(self):
-        """首次回应成功，同一请求不能重复确认"""
         self.tracker.start("interact", 1000)
-
         self.assertTrue(self.tracker.respond(1100))
 
         self.assertEqual(
             self.tracker.get_current(1200)["status"],
             "responded"
         )
-
         self.assertFalse(self.tracker.respond(1200))
 
         self.assertEqual(
@@ -402,29 +370,24 @@ class TestCompanionRequestTracker(unittest.TestCase):
         )
 
     def test_response_at_expiration_is_rejected(self):
-        """恰好到达过期时间，回应无效"""
         self.tracker.start("interact", 1000)
 
         self.assertFalse(self.tracker.respond(1300))
-
         self.assertEqual(
             self.tracker.get_current(1300)["status"],
             "expired"
         )
 
     def test_response_after_expiration_is_rejected(self):
-        """过期后不能确认旧请求"""
         self.tracker.start("seek_comfort", 1000)
 
         self.assertFalse(self.tracker.respond(1400))
-
         self.assertEqual(
             self.tracker.get_current(1400)["status"],
             "expired"
         )
 
     def test_new_request_after_response(self):
-        """旧请求回应后允许创建新请求"""
         self.tracker.start("interact", 1000)
         self.assertTrue(self.tracker.respond(1010))
 
@@ -434,8 +397,6 @@ class TestCompanionRequestTracker(unittest.TestCase):
         self.assertEqual(new["status"], "pending")
 
     def test_return_values_are_defensive_copies(self):
-        """返回的字典不能直接修改内部状态"""
-
         result = self.tracker.start("interact", 1000)
         result["status"] = "responded"
 
@@ -461,7 +422,6 @@ class TestCompanionRequestTracker(unittest.TestCase):
         )
 
     def test_concurrent_same_action_does_not_duplicate(self):
-        """多个线程同时发起请求，不应产生重复请求"""
         results = []
         errors = []
         gate = threading.Event()
@@ -495,16 +455,165 @@ class TestCompanionRequestTracker(unittest.TestCase):
             all(not t.is_alive() for t in threads),
             "疑似线程死锁"
         )
-
         self.assertFalse(errors, errors)
         self.assertEqual(len(results), 12)
-
         self.assertEqual(
             {r["id"] for r in results},
             {1}
         )
-
         self.assertEqual(self.tracker.next_request_id, 2)
+
+
+# ==========================================
+# v0.4 持续陪伴会话测试（新增）
+# ==========================================
+
+class TestCompanionSession(unittest.TestCase):
+    """测试陪伴会话开始、互动、结束和状态读取。"""
+
+    def setUp(self):
+        self.session = CompanionSession()
+
+    def test_initial_state(self):
+        """1. 初始化时尚未开始互动会话"""
+        self.assertEqual(self.session.get_state(), {
+            "is_active": False,
+            "started_at": None,
+            "last_interaction_at": None,
+            "last_interaction_type": None,
+            "interaction_count": 0
+        })
+
+    def test_start_session(self):
+        """2. 首次互动可以开始会话"""
+        result = self.session.start(1000, "touch")
+
+        self.assertTrue(result)
+        self.assertEqual(self.session.get_state(), {
+            "is_active": True,
+            "started_at": 1000,
+            "last_interaction_at": 1000,
+            "last_interaction_type": "touch",
+            "interaction_count": 1
+        })
+
+    def test_repeated_start_does_not_reset(self):
+        """3. 重复启动不能重置已有会话"""
+        self.session.start(1000, "touch")
+        before = self.session.get_state()
+
+        result = self.session.start(1020, "speech")
+
+        self.assertFalse(result)
+        self.assertEqual(self.session.get_state(), before)
+
+    def test_interact_without_active_session(self):
+        """4. 没有活动会话时不能直接记录会话互动"""
+        before = self.session.get_state()
+
+        result = self.session.interact(1020, "touch")
+
+        self.assertFalse(result)
+        self.assertEqual(self.session.get_state(), before)
+
+    def test_multiple_interactions(self):
+        """5. 持续互动更新最近时间、类型和次数"""
+        self.session.start(1000, "touch")
+
+        self.assertTrue(
+            self.session.interact(1020, "touch")
+        )
+        self.assertTrue(
+            self.session.interact(1050, "speech")
+        )
+
+        state = self.session.get_state()
+
+        self.assertTrue(state["is_active"])
+        self.assertEqual(state["started_at"], 1000)
+        self.assertEqual(state["last_interaction_at"], 1050)
+        self.assertEqual(state["last_interaction_type"], "speech")
+        self.assertEqual(state["interaction_count"], 3)
+
+    def test_end_active_session(self):
+        """6. 结束会话但保留历史记录"""
+        self.session.start(1000, "touch")
+        self.session.interact(1020, "speech")
+
+        result = self.session.end()
+        state = self.session.get_state()
+
+        self.assertTrue(result)
+        self.assertFalse(state["is_active"])
+        self.assertEqual(state["started_at"], 1000)
+        self.assertEqual(state["last_interaction_at"], 1020)
+        self.assertEqual(state["last_interaction_type"], "speech")
+        self.assertEqual(state["interaction_count"], 2)
+
+    def test_repeated_end_does_not_change_state(self):
+        """7. 重复结束会话不应改变已有记录"""
+        self.assertFalse(self.session.end())
+
+        self.session.start(1000, "touch")
+        self.assertTrue(self.session.end())
+
+        before = self.session.get_state()
+        self.assertFalse(self.session.end())
+
+        self.assertEqual(self.session.get_state(), before)
+
+    def test_interact_after_end_is_ignored(self):
+        """8. 会话结束后不再累计到旧会话"""
+        self.session.start(1000, "touch")
+        self.session.end()
+
+        before = self.session.get_state()
+        result = self.session.interact(1050, "speech")
+
+        self.assertFalse(result)
+        self.assertEqual(self.session.get_state(), before)
+
+    def test_restart_after_end(self):
+        """9. 结束后可以开始新的独立会话"""
+        self.session.start(1000, "touch")
+        self.session.interact(1020, "speech")
+        self.session.end()
+
+        result = self.session.start(2000, "call")
+        state = self.session.get_state()
+
+        self.assertTrue(result)
+        self.assertTrue(state["is_active"])
+        self.assertEqual(state["started_at"], 2000)
+        self.assertEqual(state["last_interaction_at"], 2000)
+        self.assertEqual(state["last_interaction_type"], "call")
+        self.assertEqual(state["interaction_count"], 1)
+
+    def test_long_gap_and_state_snapshot(self):
+        """10. 长时间不互动不会自动结束；读取状态互不影响"""
+        self.session.start(1000, "touch")
+
+        # 主人专心工作很久，不应自动结束会话
+        state = self.session.get_state()
+        self.assertTrue(state["is_active"])
+
+        # 很久之后主人再次说话
+        self.assertTrue(
+            self.session.interact(100000, "speech")
+        )
+
+        state = self.session.get_state()
+        self.assertTrue(state["is_active"])
+        self.assertEqual(state["interaction_count"], 2)
+        self.assertEqual(state["last_interaction_at"], 100000)
+
+        # 修改返回的字典，不应修改内部属性
+        state["interaction_count"] = 999
+        state["is_active"] = False
+
+        actual = self.session.get_state()
+        self.assertTrue(actual["is_active"])
+        self.assertEqual(actual["interaction_count"], 2)
 
 
 if __name__ == "__main__":
