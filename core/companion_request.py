@@ -34,16 +34,11 @@ class CompanionRequestTracker:
             self.next_request_id += 1
             return self.current_request
 
-        def _refresh(self, now):
-            """
-            检查当前请求是否过期。
-            注意：调用这个函数之前，外层应已获取 self.lock。
-            """
-            if self.current_request is None:
-                return
-            if self.current_request["status"] == "pending" and now >= self.current_request["expires_at"]:
-                self.current_request["status"] = "expired"
+    def _refresh(self, now):
+        if self.current_request is None:
+            return
+        if self.current_request["status"] == "pending" and now >= self.current_request["expires_at"]:
+            self.current_request["status"] = "expired"
        
-pass
 
 
