@@ -23,47 +23,26 @@ class CompanionRequestTracker:
         self.lock = threading.Lock()
 
     def start(self, action, now):
-        """
-        创建一次新的自主请求。
+        with self.lock:
+            self.current_request = {
+                "id": self.next_request_id,
+                "action": action,
+                "created_at": now,
+                "expires_at": now + self.timeout_seconds,
+                "status": "pending"
+            }
+            self.next_request_id += 1
+            return self.current_request
 
-        action：请求类型，例如 "interact"
-        now：当前时间，例如 1000
-        """
-
-    # TODO 1：
-    # 创建一个字典，保存到 self.current_request
-    # 字典需要包含以下5个键：
-    #
-    # "id"         → 使用 self.next_request_id
-    # "action"     → 使用传入的 action
-    # "created_at" → 使用传入的 now
-    # "expires_at" → 使用 now + self.timeout_seconds
-    # "status"     → 初始状态为 "pending"
-        self.current_request = {
-            "id": self.next_request_id,
-            "action": action,
-            "created_at": now,
-            "expires_at": now + self.timeout_seconds,
-            "status": "pending"
-        }
-
-    # TODO 2：
-    # 创建完成后，下一个请求编号增加1
-        self.next_request_id += 1
-
-    # TODO 3：
-    # 返回刚刚创建的请求字典
-        return self.current_request
-
-    def _refresh(self, now):
-        """
-        检查当前请求是否过期。
-        注意：调用这个函数之前，外层应已获取 self.lock。
-        """
-        if self.current_request is None:
-            return
-        if self.current_request["status"] == "pending" and now >= self.current_request["expires_at"]:
-            self.current_request["status"] = "expired"
+        def _refresh(self, now):
+            """
+            检查当前请求是否过期。
+            注意：调用这个函数之前，外层应已获取 self.lock。
+            """
+            if self.current_request is None:
+                return
+            if self.current_request["status"] == "pending" and now >= self.current_request["expires_at"]:
+                self.current_request["status"] = "expired"
        
 pass
 
