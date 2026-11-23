@@ -22,7 +22,7 @@ class CompanionRequestTracker:
         # TODO 4：创建线程锁
         self.lock = threading.Lock()
 
-    # TODO 5：获取当前请求状态，等待主人回应：pending
+    # TODO 5：创建和去重请求，等待主人回应：pending
     def start(self, action, now):
         with self.lock:
             self._refresh(now)
@@ -41,7 +41,7 @@ class CompanionRequestTracker:
                     "status": "pending"
                 }
                 self.next_request_id += 1
-                return self.current_request
+                return self.current_request.copy()
 
     # TODO 6：检查请求是否超时，及时回应：responded，过期：expired
     def _refresh(self, now):
@@ -50,6 +50,7 @@ class CompanionRequestTracker:
         if self.current_request["status"] == "pending" and now >= self.current_request["expires_at"]:
             self.current_request["status"] = "expired"
 
+    # TODO 7：安全读取请求
     def get_current(self, now):
         with self.lock:
             self._refresh(now)
