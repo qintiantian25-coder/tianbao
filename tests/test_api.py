@@ -13,6 +13,7 @@ import serve_https
 from backend.autonomy_events import AutonomyEventBuffer
 from core.behavior_scheduler import BehaviorScheduler
 from core.companion_request import CompanionRequestTracker
+from core.companion_session import CompanionSession
 from core.state_store import StateStore
 
 # 导入 Flask 应用不应自动启动后台线程，后台循环应指向共享决策入口.
@@ -24,11 +25,12 @@ client.environ_base["REMOTE_ADDR"] = "127.0.0.1"
 
 
 def reset_runtime():
-    """每个接口测试使用新的状态、冷却、事件队列和请求管理器。"""
+    """每个接口测试使用新的状态、冷却、事件队列、请求和会话管理器。"""
     app_web.store = StateStore()
     app_web.autonomy_scheduler = BehaviorScheduler(cooldown_seconds=60)
     app_web.autonomy_events = AutonomyEventBuffer(capacity=100)
     app_web.companion_tracker = CompanionRequestTracker(timeout_seconds=300)
+    app_web.companion_session = CompanionSession()
     app_web.DEBUG_AUTONOMY_API = False
 
 
@@ -58,6 +60,7 @@ for marker in (
     'data-autonomy-preset="normal_idle"',
     'id="autonomyCooldownReset"',
     'id="companionRequestStatus"',
+    'id="companionSessionStatus"',
     'class="service-commands"',
     "服务台",
 ):
@@ -87,6 +90,10 @@ assert "request_accepted" in script_text
 assert "isInvitationStillRelevant" in script_text
 assert "data.executed === false" in script_text
 assert "已有待回应请求，未重复发起" in script_text
+assert "/api/companion/session" in script_text
+assert "updateCompanionSession" in script_text
+assert "companion_session" in script_text
+assert "companionSessionStatus" in script_text
 
 # 3. 本机 GET 调试状态可用，而且不会触发行为
 status = client.get("/api/debug/autonomy")
@@ -773,5 +780,70 @@ idle_debug = client.post(
 assert idle_debug["action"] == "idle"
 assert idle_debug["executed"] is True
 assert idle_debug["request_created"] is False
+
+# 36. 持续陪伴会话：首次摸头开始计数 1，后续累加；只读接口不推进会话
+reset_runtime()
+initial_session = client.get("/api/companion/session")
+assert initial_session.status_code == 200
+initial_state = initial_session.get_json()
+assert initial_state["is_active"] is False
+assert initial_state["interaction_count"] == 0
+assert initial_state["last_interaction_type"] is None
+assert initial_state["started_at"] is None
+
+with patch.object(app_web, "run_autonomy_once") as shared_entry:
+    reread = client.get("/api/companion/session").get_json()
+    shared_entry.assert_not_called()
+assert reread["interaction_count"] == 0
+
+first_touch = client.post("/api/touch", json={"amount": 10})
+assert first_touch.status_code == 200
+first_data = first_touch.get_json()
+assert "state" in first_data and "event" in first_data
+assert first_data["companion_session"]["is_active"] is True
+assert first_data["companion_session"]["interaction_count"] == 1
+assert first_data["companion_session"]["last_interaction_type"] == "touch"
+
+second_touch = client.post("/api/touch", json={"amount": 20})
+assert second_touch.status_code == 200
+second_data = second_touch.get_json()
+assert second_data["companion_session"]["is_active"] is True
+assert second_data["companion_session"]["interaction_count"] == 2
+assert second_data["companion_session"]["last_interaction_type"] == "touch"
+
+session_state = client.get("/api/companion/session").get_json()
+assert session_state["is_active"] is True
+assert session_state["interaction_count"] == 2
+assert session_state["last_interaction_type"] == "touch"
+assert session_state["started_at"] is not None
+assert session_state["last_interaction_at"] is not None
+
+https_session = serve_https.app.test_client().get("/api/companion/session")
+assert https_session.status_code == 200
+assert https_session.get_json()["interaction_count"] == 2
+
+# 37. 邀请回应与持续陪伴会话相互独立
+reset_runtime()
+app_web.store.apply_social_need_increase(20)
+app_web.run_autonomy_once(background=True)  # pending request
+
+before_touch = client.get("/api/companion/session").get_json()
+assert before_touch["is_active"] is False
+assert before_touch["interaction_count"] == 0
+
+accepted_touch = client.post(
+    "/api/touch", json={"amount": 10}
+).get_json()
+assert accepted_touch["request_accepted"] is True
+assert accepted_touch["companion_request"]["status"] == "responded"
+assert accepted_touch["companion_session"]["is_active"] is True
+assert accepted_touch["companion_session"]["interaction_count"] == 1
+
+next_touch = client.post(
+    "/api/touch", json={"amount": 10}
+).get_json()
+assert next_touch["request_accepted"] is False
+assert next_touch["companion_session"]["is_active"] is True
+assert next_touch["companion_session"]["interaction_count"] == 2
 
 print("后端接口集成测试通过！")

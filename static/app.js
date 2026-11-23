@@ -61,6 +61,7 @@ const autonomyStatus = $("autonomyStatus");
 const autonomyCooldownReset = $("autonomyCooldownReset");
 const autonomyPresetStatus = $("autonomyPresetStatus");
 const companionRequestStatus = $("companionRequestStatus");
+const companionSessionStatus = $("companionSessionStatus");
 const autonomyPresetButtons = [...document.querySelectorAll("[data-autonomy-preset]")];
 const stateGroup = document.querySelector(".state-group");
 
@@ -261,6 +262,7 @@ const appState = {
     speakerIdentity: "unknown",
   },
   companionRequest: null,
+  companionSession: null,
   baseExpression: baseExpressionFor("happy", 60),
   view: "robot",
   move: { x: 50, y: 74, motion: "待机", runToggle: false },
@@ -776,18 +778,44 @@ function updateCompanionRequest(data) {
   }
 }
 
+function updateCompanionSession(data) {
+  const state = data && typeof data === "object" ? data : null;
+  appState.companionSession = state;
+
+  if (!companionSessionStatus) return;
+
+  if (!state || state.is_active !== true) {
+    companionSessionStatus.textContent = "陪伴会话: 未开始.";
+    companionSessionStatus.dataset.state = "inactive";
+    return;
+  }
+
+  const count = Number.isFinite(Number(state.interaction_count))
+    ? Math.max(0, Math.trunc(Number(state.interaction_count)))
+    : 0;
+  const typeLabel = state.last_interaction_type === "touch"
+    ? "真实摸头"
+    : (state.last_interaction_type || "未知");
+  companionSessionStatus.textContent =
+    `陪伴会话: 进行中 · 互动 ${count} 次 · 最近互动: ${typeLabel}`;
+  companionSessionStatus.dataset.state = "active";
+}
+
 async function pollState() {
   if (pollBusy || actionDepth > 0 || document.hidden) return;
   pollBusy = true;
   const epochAtStart = backendEpoch;
 
-  // One poll cycle serves the state panel, the autonomy event stream and the
-  // current companion request; no second timer is created.
-  const [stateResult, eventsResult, requestResult] = await Promise.allSettled([
-    apiRequest("/api/state"),
-    apiRequest(autonomyEventsUrl()),
-    apiRequest("/api/companion/request"),
-  ]);
+  // One poll cycle serves the state panel, the autonomy event stream, the
+  // companion request and the ongoing companion session; no second timer is
+  // created.
+  const [stateResult, eventsResult, requestResult, sessionResult] =
+    await Promise.allSettled([
+      apiRequest("/api/state"),
+      apiRequest(autonomyEventsUrl()),
+      apiRequest("/api/companion/request"),
+      apiRequest("/api/companion/session"),
+    ]);
 
   try {
     if (stateResult.status !== "fulfilled") {
@@ -814,6 +842,10 @@ async function pollState() {
     updateCompanionRequest(requestResult.value);
   }
 
+  if (sessionResult.status === "fulfilled") {
+    updateCompanionSession(sessionResult.value);
+  }
+
   if (eventsResult.status === "fulfilled") {
     processAutonomyEvents(eventsResult.value);
   } else if (eventsResult.reason && eventsResult.reason.status === 400) {
@@ -837,6 +869,10 @@ async function sendTouch(amount, meta = {}) {
     applyBackendState(data.state);
     setOnline(true);
     if (connectionErrorShown) clearDebugError();
+
+    if (data.companion_session) {
+      updateCompanionSession(data.companion_session);
+    }
 
     const tier = meta.level ? TOUCH_TIER_LABEL[meta.level] : "摸头";
     updateLastEvent(`真实摸头 · ${tier} · amount ${amount}`);

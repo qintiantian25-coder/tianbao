@@ -29,6 +29,7 @@ from backend.tts_proxy import tts_bp
 from core.action_executor import execute_action
 from core.behavior_scheduler import BehaviorScheduler
 from core.companion_request import CompanionRequestTracker
+from core.companion_session import CompanionSession
 from core.state_store import StateStore
 
 
@@ -50,9 +51,13 @@ autonomy_scheduler = BehaviorScheduler(cooldown_seconds=60)
 # 后台决策和摸头 HTTP 接口共用同一个请求管理器与 monotonic 时间线.
 companion_tracker = CompanionRequestTracker(timeout_seconds=300)
 
+# 持续陪伴会话：只由真实后端摸头推进，不设置自动超时/结束.
+companion_session = CompanionSession()
+
 # 非重入锁：保护一次完整的“读取状态 -> 决策 -> 执行”以及请求创建/回应.
-# 锁顺序固定为 _autonomy_lock -> StateStore / CompanionRequestTracker 内部锁.
-# 持有这把锁时不要再调用 run_autonomy_once()，否则会死锁.
+# 锁顺序固定为 _autonomy_lock -> StateStore / CompanionRequestTracker /
+# CompanionSession 内部锁. 持有这把锁时不要再调用 run_autonomy_once()，
+# 否则会死锁.
 _autonomy_lock = threading.Lock()
 
 DEFAULT_AUTONOMY_INTERVAL = 10.0
@@ -181,6 +186,19 @@ def get_companion_request():
 
 
 # =========================
+# 4c. 持续陪伴会话状态（只读）
+# =========================
+
+@app.get("/api/companion/session")
+def get_companion_session():
+    """只读：返回当前陪伴会话状态，不启动/结束/推进会话。"""
+    with _autonomy_lock:
+        state = companion_session.get_state()
+
+    return jsonify(state)
+
+
+# =========================
 # 5. 摸头事件
 # =========================
 
@@ -192,12 +210,18 @@ def touch():
     if error:
         return jsonify({"error": error}), 400
 
-    # 与后台决策共用锁：保证“摸头状态变化 + 请求确认”是连贯的.
+    # 与后台决策共用锁：保证“摸头状态变化 + 请求确认 + 会话推进”是连贯的.
     # 无论 respond() 返回 True/False，本次摸头都只调用一次 apply_touch.
     with _autonomy_lock:
         current, message = store.apply_touch(amount)
 
         now = time.monotonic()
+
+        # 第一次摸头开始会话并计为 1 次；后续摸头只累加，不重复计数.
+        if not companion_session.start(now, "touch"):
+            companion_session.interact(now, "touch")
+        session_state = companion_session.get_state()
+
         request_accepted = companion_tracker.respond(now)
         accepted_request = (
             companion_tracker.get_current(now)
@@ -222,6 +246,7 @@ def touch():
         },
         "request_accepted": request_accepted,
         "companion_request": accepted_request,
+        "companion_session": session_state,
     })
 
 
