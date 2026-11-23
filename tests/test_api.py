@@ -12,6 +12,7 @@ import app_web
 import serve_https
 from backend.autonomy_events import AutonomyEventBuffer
 from core.behavior_scheduler import BehaviorScheduler
+from core.companion_request import CompanionRequestTracker
 from core.state_store import StateStore
 
 # 导入 Flask 应用不应自动启动后台线程，后台循环应指向共享决策入口.
@@ -23,10 +24,11 @@ client.environ_base["REMOTE_ADDR"] = "127.0.0.1"
 
 
 def reset_runtime():
-    """每个接口测试使用新的状态、冷却和事件队列，避免相互影响。"""
+    """每个接口测试使用新的状态、冷却、事件队列和请求管理器。"""
     app_web.store = StateStore()
     app_web.autonomy_scheduler = BehaviorScheduler(cooldown_seconds=60)
     app_web.autonomy_events = AutonomyEventBuffer(capacity=100)
+    app_web.companion_tracker = CompanionRequestTracker(timeout_seconds=300)
     app_web.DEBUG_AUTONOMY_API = False
 
 
@@ -55,6 +57,7 @@ for marker in (
     'data-autonomy-preset="low_energy"',
     'data-autonomy-preset="normal_idle"',
     'id="autonomyCooldownReset"',
+    'id="companionRequestStatus"',
     'class="service-commands"',
     "服务台",
 ):
@@ -70,6 +73,7 @@ script_text = script.get_data(as_text=True)
 assert "/api/debug/autonomy" in script_text
 assert "/api/debug/state/preset" in script_text
 assert "/api/autonomy/events" in script_text
+assert "/api/companion/request" in script_text
 assert "AUTONOMY_META" in script_text
 assert "seek_comfort" in script_text
 assert "autonomyInteractionBusy" in script_text
@@ -78,6 +82,9 @@ assert "AUTONOMY_EVENT_TTL_MS" in script_text
 assert 'appState.interaction.mode !== "idle"' in script_text
 assert "voiceResponseActive" in script_text
 assert "designPetActive" in script_text
+assert "updateCompanionRequest" in script_text
+assert "request_accepted" in script_text
+assert "isInvitationStillRelevant" in script_text
 
 # 3. 本机 GET 调试状态可用，而且不会触发行为
 status = client.get("/api/debug/autonomy")
@@ -156,6 +163,8 @@ assert touch.status_code == 200
 touch_data = touch.get_json()
 assert "state" in touch_data and "event" in touch_data
 assert touch_data["state"]["energy"] == 80
+assert touch_data["request_accepted"] is False
+assert touch_data["companion_request"] is None
 
 # 10. 状态预设通过后端 StateStore 生效（不是前端改显示数值）
 reset_runtime()
@@ -365,6 +374,7 @@ interact_events = app_web.autonomy_events.read(0)["events"]
 assert len(interact_events) == 1
 assert interact_events[0]["action"] == "interact"
 assert "玩" in interact_events[0]["message"]
+assert interact_events[0]["request_id"] == 1
 
 second_background = app_web.run_autonomy_once(background=True)
 assert second_background[0] == "idle"
@@ -381,6 +391,7 @@ rest_events = app_web.autonomy_events.read(0)["events"]
 assert len(rest_events) == 1
 assert rest_events[0]["action"] == "rest"
 assert "休息" in rest_events[0]["message"]
+assert rest_events[0]["request_id"] is None
 
 reset_runtime()
 app_web.store.apply_sad_event(80)
@@ -392,6 +403,7 @@ comfort_events = app_web.autonomy_events.read(0)["events"]
 assert len(comfort_events) == 1
 assert comfort_events[0]["action"] == "seek_comfort"
 assert "安慰" in comfort_events[0]["message"]
+assert comfort_events[0]["request_id"] == 1
 
 # 21. 并发调用被同一把非重入锁串行化
 reset_runtime()
@@ -480,6 +492,7 @@ first_event = buffer.publish("interact", "hello")
 assert first_event["id"] == 1
 assert first_event["action"] == "interact"
 assert first_event["source"] == "background"
+assert first_event["request_id"] is None
 assert isinstance(first_event["created_at"], float)
 
 buffer.publish("rest", "rest")
@@ -597,5 +610,147 @@ https_client = serve_https.app.test_client()
 https_events = https_client.get("/api/autonomy/events")
 assert https_events.status_code == 200
 assert https_events.get_json()["latest_id"] == 0
+
+# 29. 只读请求状态接口：无请求时明确返回 null，且不创建请求
+reset_runtime()
+energy_before_request = app_web.store.get_state()["energy"]
+with patch.object(app_web, "run_autonomy_once") as shared_entry:
+    request_response = client.get("/api/companion/request")
+    assert request_response.status_code == 200
+    shared_entry.assert_not_called()
+
+request_payload = request_response.get_json()
+assert request_payload["request"] is None
+assert request_payload["remaining_seconds"] is None
+assert request_payload["timeout_seconds"] == 300
+assert app_web.store.get_state()["energy"] == energy_before_request
+assert app_web.companion_tracker.get_current(time.monotonic()) is None
+
+https_request = serve_https.app.test_client().get("/api/companion/request")
+assert https_request.status_code == 200
+assert https_request.get_json()["request"] is None
+
+# 30. 后台 interact 创建请求；GET 只读且不重复扣精力
+reset_runtime()
+app_web.store.apply_social_need_increase(20)  # social -> 100
+action, state, _ = app_web.run_autonomy_once(background=True)
+assert action == "interact"
+energy_after_interact = state["energy"]
+event_after_interact = app_web.autonomy_events.latest_id
+
+pending_payload = client.get("/api/companion/request").get_json()
+pending = pending_payload["request"]
+assert pending is not None
+assert pending["id"] == 1
+assert pending["action"] == "interact"
+assert pending["status"] == "pending"
+assert 0 < pending_payload["remaining_seconds"] <= 300
+
+again = client.get("/api/companion/request").get_json()
+assert again["request"]["id"] == 1
+assert app_web.store.get_state()["energy"] == energy_after_interact
+assert app_web.autonomy_events.latest_id == event_after_interact
+assert app_web.companion_tracker.next_request_id == 2
+
+# 31. 同类型 pending 请求重复出现时不再扣精力、不再发布邀请事件
+reset_runtime()
+app_web.store.apply_social_need_increase(20)
+first = app_web.run_autonomy_once(background=True)
+assert first[0] == "interact"
+first_energy = first[1]["energy"]
+first_event_id = app_web.autonomy_events.latest_id
+first_request_id = app_web.companion_tracker.get_current(time.monotonic())["id"]
+
+# 清掉调度器互动冷却，强制下一次决策仍然是 interact；请求仍然 pending。
+app_web.autonomy_scheduler.last_interact_at = None
+second = app_web.run_autonomy_once(background=True)
+assert second[0] == "interact"  # 决策动作保留，兼容手动调试 API
+assert second[1]["energy"] == first_energy
+assert app_web.autonomy_events.latest_id == first_event_id
+
+current = app_web.companion_tracker.get_current(time.monotonic())
+assert current["id"] == first_request_id
+assert current["status"] == "pending"
+assert app_web.companion_tracker.next_request_id == 2
+
+# 32. 不同类型的请求可以替换旧的 pending 请求
+reset_runtime()
+app_web.store.apply_social_need_increase(20)
+app_web.run_autonomy_once(background=True)  # interact request id=1
+
+app_web.store.apply_sad_event(80)
+app_web.store.apply_sad_event(80)
+comfort = app_web.run_autonomy_once(background=True)
+assert comfort[0] == "seek_comfort"
+replaced = app_web.companion_tracker.get_current(time.monotonic())
+assert replaced["id"] == 2
+assert replaced["action"] == "seek_comfort"
+assert replaced["status"] == "pending"
+
+all_events = app_web.autonomy_events.read(0)["events"]
+assert [event["action"] for event in all_events] == [
+    "interact",
+    "seek_comfort",
+]
+assert [event["request_id"] for event in all_events] == [1, 2]
+
+# 33. 首次摸头确认请求；后续摸头正常互动但不重复确认
+reset_runtime()
+app_web.store.apply_social_need_increase(20)
+app_web.run_autonomy_once(background=True)
+energy_before_touch = app_web.store.get_state()["energy"]
+
+touch1 = client.post("/api/touch", json={"amount": 10})
+assert touch1.status_code == 200
+touch1_data = touch1.get_json()
+assert touch1_data["request_accepted"] is True
+assert touch1_data["companion_request"]["id"] == 1
+assert touch1_data["companion_request"]["action"] == "interact"
+assert touch1_data["companion_request"]["status"] == "responded"
+assert "state" in touch1_data and "event" in touch1_data
+assert touch1_data["state"]["energy"] == energy_before_touch
+
+touch2 = client.post("/api/touch", json={"amount": 10})
+assert touch2.status_code == 200
+touch2_data = touch2.get_json()
+assert touch2_data["request_accepted"] is False
+assert touch2_data["companion_request"] is None
+assert "state" in touch2_data and "event" in touch2_data
+
+status_payload = client.get("/api/companion/request").get_json()
+assert status_payload["request"]["id"] == 1
+assert status_payload["request"]["status"] == "responded"
+assert status_payload["remaining_seconds"] == 0
+
+# 34. 过期请求通过只读接口返回 expired，GET 不创建新请求
+reset_runtime()
+app_web.companion_tracker = CompanionRequestTracker(timeout_seconds=0)
+app_web.companion_tracker.start("interact", time.monotonic())
+
+expired_payload = client.get("/api/companion/request").get_json()
+assert expired_payload["request"]["action"] == "interact"
+assert expired_payload["request"]["status"] == "expired"
+assert expired_payload["remaining_seconds"] == 0
+assert app_web.companion_tracker.next_request_id == 2
+
+# 35. 手动调试也遵守请求去重，不重复扣精力或发布后台事件
+reset_runtime()
+app_web.store.apply_social_need_increase(20)
+manual_first = client.post(
+    "/api/debug/autonomy", headers=headers, json={}
+).get_json()
+assert manual_first["action"] == "interact"
+manual_energy = manual_first["state"]["energy"]
+assert app_web.autonomy_events.latest_id == 0
+
+app_web.autonomy_scheduler.last_interact_at = None
+manual_second = client.post(
+    "/api/debug/autonomy", headers=headers, json={}
+).get_json()
+assert manual_second["action"] == "interact"  # 决策动作保留
+assert manual_second["state"]["energy"] == manual_energy
+assert app_web.autonomy_events.latest_id == 0
+assert app_web.companion_tracker.get_current(time.monotonic())["id"] == 1
+assert app_web.companion_tracker.next_request_id == 2
 
 print("后端接口集成测试通过！")

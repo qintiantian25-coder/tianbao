@@ -28,8 +28,13 @@ class AutonomyEventBuffer:
         with self._lock:
             return self._next_id
 
-    def publish(self, action, message, source="background"):
-        """Append one event and return a copy of it."""
+    def publish(self, action, message, source="background", request_id=None):
+        """Append one event and return a copy of it.
+
+        ``request_id`` links invitation events to the companion request that
+        caused them, so a client can ignore an invitation that has already
+        been responded to or replaced.
+        """
         with self._lock:
             self._next_id += 1
             event = {
@@ -38,6 +43,7 @@ class AutonomyEventBuffer:
                 "message": str(message),
                 "created_at": time.time(),
                 "source": str(source),
+                "request_id": request_id,
             }
             self._events.append(event)
             return dict(event)

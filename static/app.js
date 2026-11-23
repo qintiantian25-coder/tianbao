@@ -60,6 +60,7 @@ const autonomyTick = $("autonomyTick");
 const autonomyStatus = $("autonomyStatus");
 const autonomyCooldownReset = $("autonomyCooldownReset");
 const autonomyPresetStatus = $("autonomyPresetStatus");
+const companionRequestStatus = $("companionRequestStatus");
 const autonomyPresetButtons = [...document.querySelectorAll("[data-autonomy-preset]")];
 const stateGroup = document.querySelector(".state-group");
 
@@ -259,6 +260,7 @@ const appState = {
     listeningTarget: null,
     speakerIdentity: "unknown",
   },
+  companionRequest: null,
   baseExpression: baseExpressionFor("happy", 60),
   view: "robot",
   move: { x: 50, y: 74, motion: "待机", runToggle: false },
@@ -740,16 +742,51 @@ function applyBackendState(data) {
   return true;
 }
 
+function updateCompanionRequest(data) {
+  const request = data && data.request && typeof data.request === "object"
+    ? data.request
+    : null;
+  appState.companionRequest = request;
+
+  if (!companionRequestStatus) return;
+
+  if (!request) {
+    companionRequestStatus.textContent = "当前没有待回应的请求.";
+    companionRequestStatus.dataset.state = "none";
+    return;
+  }
+
+  const label = request.action === "seek_comfort" ? "安慰" : "陪伴";
+  const ref = request.id ? ` #${request.id}` : "";
+
+  if (request.status === "pending") {
+    const remaining = Number(data.remaining_seconds);
+    const suffix = Number.isFinite(remaining)
+      ? ` · 剩余 ${Math.max(0, Math.ceil(remaining))}s`
+      : "";
+    companionRequestStatus.textContent =
+      `等待主人回应: ${label}请求${ref}${suffix}`;
+    companionRequestStatus.dataset.state = "pending";
+  } else if (request.status === "responded") {
+    companionRequestStatus.textContent = `主人已回应: ${label}请求${ref}`;
+    companionRequestStatus.dataset.state = "responded";
+  } else {
+    companionRequestStatus.textContent = `请求已过期: ${label}请求${ref}`;
+    companionRequestStatus.dataset.state = "expired";
+  }
+}
+
 async function pollState() {
   if (pollBusy || actionDepth > 0 || document.hidden) return;
   pollBusy = true;
   const epochAtStart = backendEpoch;
 
-  // One poll cycle serves both the state panel and the autonomy event
-  // stream; no second timer is created.
-  const [stateResult, eventsResult] = await Promise.allSettled([
+  // One poll cycle serves the state panel, the autonomy event stream and the
+  // current companion request; no second timer is created.
+  const [stateResult, eventsResult, requestResult] = await Promise.allSettled([
     apiRequest("/api/state"),
     apiRequest(autonomyEventsUrl()),
+    apiRequest("/api/companion/request"),
   ]);
 
   try {
@@ -769,6 +806,12 @@ async function pollState() {
     showConnectionError(`无法连接 Python 后端: ${friendlyError(error)}`);
   } finally {
     pollBusy = false;
+  }
+
+  // Update the request status before processing events, so a stale invitation
+  // for a request that was just responded to is ignored immediately.
+  if (requestResult.status === "fulfilled") {
+    updateCompanionRequest(requestResult.value);
   }
 
   if (eventsResult.status === "fulfilled") {
@@ -797,7 +840,42 @@ async function sendTouch(amount, meta = {}) {
 
     const tier = meta.level ? TOUCH_TIER_LABEL[meta.level] : "摸头";
     updateLastEvent(`真实摸头 · ${tier} · amount ${amount}`);
-    showServerEvent(data.event);
+
+    if (data.request_accepted && data.companion_request) {
+      const request = data.companion_request;
+      const label = request.action === "seek_comfort" ? "安慰" : "陪伴";
+      const text = request.action === "seek_comfort"
+        ? "谢谢主人来安慰我，tianbao 心里暖暖的~"
+        : "嘿嘿，谢谢主人回应我！tianbao 好开心~";
+
+      updateCompanionRequest({
+        request,
+        remaining_seconds: 0,
+      });
+
+      // The invitation has been accepted; do not let a pending invitation
+      // bubble/animation play later.
+      if (pendingAutonomyEvent
+          && (pendingAutonomyEvent.action === "interact"
+            || pendingAutonomyEvent.action === "seek_comfort")) {
+        pendingAutonomyEvent = null;
+      }
+
+      updateLastEvent(`主人回应了${label}请求${request.id ? ` #${request.id}` : ""}`);
+      if (designPetStatus) designPetStatus.textContent = text;
+
+      if (appState.interaction.mode !== "speaking"
+          && appState.interaction.mode !== "listening") {
+        bubble.type({
+          label: "tianbao",
+          text,
+          charDelay: 32,
+          autoHideMs: 5200,
+        });
+      }
+    } else {
+      showServerEvent(data.event);
+    }
   } catch (error) {
     setOnline(false);
     const message = friendlyError(error);
@@ -1065,6 +1143,22 @@ function autonomyEventsUrl() {
   return `/api/autonomy/events?after_id=${encodeURIComponent(autonomyCursor)}`;
 }
 
+function isInvitationStillRelevant(action, requestId) {
+  if (action !== "interact" && action !== "seek_comfort") return true;
+  if (!Number.isInteger(requestId)) return true;
+
+  const current = appState.companionRequest;
+  if (!current) return true;
+
+  const currentId = Number(current.id);
+  if (!Number.isInteger(currentId)) return true;
+
+  if (requestId < currentId) return false;   // replaced/old invitation
+  if (requestId > currentId) return true;    // newer request not polled yet
+
+  return current.status === "pending" && current.action === action;
+}
+
 function processAutonomyEvents(data) {
   if (!data || typeof data !== "object") return;
 
@@ -1096,7 +1190,12 @@ function processAutonomyEvents(data) {
     if (!AUTONOMY_EVENT_ACTIONS.has(event.action)) return false;
 
     const id = Number(event.id);
-    return Number.isInteger(id) && id > previousCursor;
+    if (!Number.isInteger(id) || id <= previousCursor) return false;
+
+    const requestId = event.request_id === null || event.request_id === undefined
+      ? null
+      : Number(event.request_id);
+    return isInvitationStillRelevant(event.action, requestId);
   });
 
   if (!fresh.length) return;
@@ -1133,10 +1232,15 @@ function queueAutonomyEvent(event) {
     return;
   }
 
+  const requestId = event.request_id === null || event.request_id === undefined
+    ? null
+    : Number(event.request_id);
+
   pendingAutonomyEvent = {
     id: Number(event.id),
     action: event.action,
     message: typeof event.message === "string" ? event.message : "",
+    requestId: Number.isInteger(requestId) ? requestId : null,
     priority,
     queuedAt: now,
   };
@@ -1168,6 +1272,15 @@ function autonomyInteractionBusy() {
 
 function flushPendingAutonomyEvent() {
   if (!pendingAutonomyEvent) return;
+
+  if (!isInvitationStillRelevant(
+    pendingAutonomyEvent.action,
+    pendingAutonomyEvent.requestId,
+  )) {
+    updateLastEvent("邀请已被回应或替换，跳过过期邀请事件.");
+    pendingAutonomyEvent = null;
+    return;
+  }
 
   const now = performance.now();
   if (isAutonomyEventExpired(pendingAutonomyEvent, now)) {

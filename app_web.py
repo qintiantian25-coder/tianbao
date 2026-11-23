@@ -28,6 +28,7 @@ from backend.autonomy_runner import AutonomyLoop, autonomy_logger
 from backend.tts_proxy import tts_bp
 from core.action_executor import execute_action
 from core.behavior_scheduler import BehaviorScheduler
+from core.companion_request import CompanionRequestTracker
 from core.state_store import StateStore
 
 
@@ -46,7 +47,11 @@ app.register_blueprint(tts_bp)
 # 手动调试和后台循环共用同一个调度器与 StateStore.
 autonomy_scheduler = BehaviorScheduler(cooldown_seconds=60)
 
-# 非重入锁：保护一次完整的“读取状态 -> 决策 -> 执行”过程.
+# 后台决策和摸头 HTTP 接口共用同一个请求管理器与 monotonic 时间线.
+companion_tracker = CompanionRequestTracker(timeout_seconds=300)
+
+# 非重入锁：保护一次完整的“读取状态 -> 决策 -> 执行”以及请求创建/回应.
+# 锁顺序固定为 _autonomy_lock -> StateStore / CompanionRequestTracker 内部锁.
 # 持有这把锁时不要再调用 run_autonomy_once()，否则会死锁.
 _autonomy_lock = threading.Lock()
 
@@ -149,6 +154,33 @@ def get_state():
 
 
 # =========================
+# 4b. 主人回应请求状态（只读）
+# =========================
+
+@app.get("/api/companion/request")
+def get_companion_request():
+    """只读：返回当前请求副本和剩余有效时间，不创建/消耗任何请求。"""
+    with _autonomy_lock:
+        now = time.monotonic()
+        current = companion_tracker.get_current(now)
+
+        if current is None:
+            remaining = None
+        elif current["status"] == "pending":
+            remaining = max(0.0, current["expires_at"] - now)
+        else:
+            remaining = 0.0
+
+        timeout_seconds = companion_tracker.timeout_seconds
+
+    return jsonify({
+        "request": current,
+        "remaining_seconds": None if remaining is None else round(remaining, 1),
+        "timeout_seconds": timeout_seconds,
+    })
+
+
+# =========================
 # 5. 摸头事件
 # =========================
 
@@ -160,8 +192,18 @@ def touch():
     if error:
         return jsonify({"error": error}), 400
 
-    # 具体情绪变化由 StateStore 处理
-    current, message = store.apply_touch(amount)
+    # 与后台决策共用锁：保证“摸头状态变化 + 请求确认”是连贯的.
+    # 无论 respond() 返回 True/False，本次摸头都只调用一次 apply_touch.
+    with _autonomy_lock:
+        current, message = store.apply_touch(amount)
+
+        now = time.monotonic()
+        request_accepted = companion_tracker.respond(now)
+        accepted_request = (
+            companion_tracker.get_current(now)
+            if request_accepted
+            else None
+        )
 
     # 事件标题属于 API 展示逻辑
     if amount <= 10:
@@ -178,6 +220,8 @@ def touch():
             "title": title,
             "message": message,
         },
+        "request_accepted": request_accepted,
+        "companion_request": accepted_request,
     })
 
 
@@ -275,14 +319,39 @@ def _cooldown_remaining(now):
     )
 
 
-def _publish_autonomy_event(action):
+def _is_new_companion_request(before, after, action):
+    """区分 start() 新建请求与返回已有 pending 请求。
+
+    CompanionRequestTracker.start() 只返回请求字典，没有 created 标志；
+    这里使用调用前后的快照判断。相同 action 的 pending 请求必须复用，
+    不能再次扣精力或发布邀请事件。
+    """
+    if not isinstance(after, dict) or after.get("status") != "pending":
+        return False
+    if after.get("action") != action:
+        return False
+    if before is None:
+        return True
+    if before.get("status") != "pending" or before.get("action") != action:
+        return True
+
+    # 同类型 pending 请求只有 id 变化才算新建（例如恰好过期后重建）。
+    return after.get("id") != before.get("id")
+
+
+def _publish_autonomy_event(action, request_id=None):
     """发布一条后台自主行为事件；只在实际执行成功后调用。"""
     message = AUTONOMY_EVENT_MESSAGES.get(action)
     if message is None:
         return
 
     try:
-        autonomy_events.publish(action, message, source="background")
+        autonomy_events.publish(
+            action,
+            message,
+            source="background",
+            request_id=request_id,
+        )
     except Exception:
         # 事件通知失败不应影响已经执行完成的行为.
         autonomy_logger.exception("自主行为事件发布失败")
@@ -318,30 +387,61 @@ def run_autonomy_once(*, background=False):
     background=True 时只跳过“已经是 idle 的 idle”和“已经是 rest 的 rest”，
     避免每 10 秒重复打印/重复进入同一状态；rest -> idle 等真正的状态切换
     仍然会正常执行。
+
+    interact / seek_comfort 还会先经过 CompanionRequestTracker：
+    只有创建了新请求才执行动作并扣精力（后台模式才发布邀请事件）；
+    同类型 pending 请求重复出现时跳过执行（不扣精力、不发事件），但保留
+    decision 作为返回值以兼容手动调试 API。
     """
     with _autonomy_lock:
         state = store.get_state()
         now = time.monotonic()
-        action = autonomy_scheduler.tick(state, now)
+        decision = autonomy_scheduler.tick(state, now)
 
         repeated = (
             background
-            and action == state.get("activity")
-            and action in ("idle", "rest")
+            and decision == state.get("activity")
+            and decision in ("idle", "rest")
         )
 
         if repeated:
             # get_state() 已经结算了这段时间的待机/休息恢复.
+            action = decision
             result = store.get_state()
             autonomy_logger.debug(
                 "自主决策: %s (activity 未变化，跳过执行)",
                 action,
             )
         else:
-            result = execute_action(action, store)
-            if background:
-                _log_background_action(action, state, result)
-                _publish_autonomy_event(action)
+            action = decision
+            should_execute = True
+            request_id = None
+
+            if decision in ("interact", "seek_comfort"):
+                before = companion_tracker.get_current(now)
+                request = companion_tracker.start(decision, now)
+                should_execute = _is_new_companion_request(
+                    before,
+                    request,
+                    decision,
+                )
+                request_id = request.get("id") if request else None
+
+                if not should_execute:
+                    # 同类型 pending 请求已存在：不扣精力、不重复发布邀请
+                    # 事件，也不重复执行动作。保留 decision 作为返回值，
+                    # 以兼容手动调试 API；调度器冷却仍然照常更新。
+                    result = store.get_state()
+                    autonomy_logger.debug(
+                        "自主决策: %s (已有同类型待回应请求，跳过执行)",
+                        decision,
+                    )
+
+            if should_execute:
+                result = execute_action(action, store)
+                if background:
+                    _log_background_action(action, state, result)
+                    _publish_autonomy_event(action, request_id)
 
         cooldown = _cooldown_remaining(time.monotonic())
 
