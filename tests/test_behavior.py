@@ -17,11 +17,14 @@ from core.companion_request import CompanionRequestTracker
 from core.companion_session import CompanionSession
 
 
+# ==========================================
+# 1. 自主行为测试
+# ==========================================
+
 class TestBehavior(unittest.TestCase):
     """自主行为决策、调度及执行测试。"""
 
     def test_decision(self):
-        """测试不同状态下的行为选择"""
         cases = [
             (20, 90, "happy", 60, "rest"),
             (80, 85, "happy", 60, "interact"),
@@ -51,7 +54,6 @@ class TestBehavior(unittest.TestCase):
                 self.assertEqual(decide_action(state), expected)
 
     def test_scheduler_interact(self):
-        """测试普通互动冷却时间"""
         scheduler = BehaviorScheduler(cooldown_seconds=60)
 
         state = {
@@ -69,7 +71,6 @@ class TestBehavior(unittest.TestCase):
         self.assertEqual(scheduler.tick(state, 170), "rest")
 
     def test_scheduler_comfort(self):
-        """测试寻求安慰冷却时间"""
         scheduler = BehaviorScheduler()
 
         state = {
@@ -93,7 +94,6 @@ class TestBehavior(unittest.TestCase):
         )
 
     def test_executor_interact_and_rest(self):
-        """测试互动、休息与待机"""
         with patch(
             "core.state_store.time.monotonic",
             return_value=1000.0
@@ -125,7 +125,6 @@ class TestBehavior(unittest.TestCase):
             self.assertEqual(result["activity"], "idle")
 
     def test_executor_seek_comfort(self):
-        """测试伤心时主动寻求安慰"""
         with patch(
             "core.state_store.time.monotonic",
             return_value=1000.0
@@ -153,7 +152,6 @@ class TestBehavior(unittest.TestCase):
             self.assertEqual(result["activity"], "idle")
 
     def test_rest_hysteresis(self):
-        """测试开始休息、持续休息和结束休息"""
         state = {
             "emotion": "calm",
             "intensity": 0,
@@ -172,7 +170,6 @@ class TestBehavior(unittest.TestCase):
         self.assertEqual(decide_action(state), "idle")
 
     def test_comfort_cooldown_keeps_rest(self):
-        """测试安慰冷却不会意外打断休息"""
         scheduler = BehaviorScheduler()
 
         state = {
@@ -197,8 +194,11 @@ class TestBehavior(unittest.TestCase):
         )
 
 
+# ==========================================
+# 2. 自主行为后台线程测试
+# ==========================================
+
 class TestAutonomyLoop(unittest.TestCase):
-    """后台循环的启动、停止、单实例和异常恢复测试。"""
 
     def test_start_stop_and_single_instance(self):
         calls = []
@@ -286,11 +286,10 @@ class TestAutonomyLoop(unittest.TestCase):
 
 
 # ==========================================
-# v0.3 主人请求管理器测试
+# 3. v0.3 主人请求管理器测试
 # ==========================================
 
 class TestCompanionRequestTracker(unittest.TestCase):
-    """主人邀请、有效期、回应及并发测试。"""
 
     def setUp(self):
         self.tracker = CompanionRequestTracker()
@@ -465,17 +464,15 @@ class TestCompanionRequestTracker(unittest.TestCase):
 
 
 # ==========================================
-# v0.4 持续陪伴会话测试（新增）
+# 4. v0.4 持续陪伴会话测试
 # ==========================================
 
 class TestCompanionSession(unittest.TestCase):
-    """测试陪伴会话开始、互动、结束和状态读取。"""
 
     def setUp(self):
         self.session = CompanionSession()
 
     def test_initial_state(self):
-        """1. 初始化时尚未开始互动会话"""
         self.assertEqual(self.session.get_state(), {
             "is_active": False,
             "started_at": None,
@@ -485,7 +482,6 @@ class TestCompanionSession(unittest.TestCase):
         })
 
     def test_start_session(self):
-        """2. 首次互动可以开始会话"""
         result = self.session.start(1000, "touch")
 
         self.assertTrue(result)
@@ -498,7 +494,6 @@ class TestCompanionSession(unittest.TestCase):
         })
 
     def test_repeated_start_does_not_reset(self):
-        """3. 重复启动不能重置已有会话"""
         self.session.start(1000, "touch")
         before = self.session.get_state()
 
@@ -508,16 +503,13 @@ class TestCompanionSession(unittest.TestCase):
         self.assertEqual(self.session.get_state(), before)
 
     def test_interact_without_active_session(self):
-        """4. 没有活动会话时不能直接记录会话互动"""
         before = self.session.get_state()
-
         result = self.session.interact(1020, "touch")
 
         self.assertFalse(result)
         self.assertEqual(self.session.get_state(), before)
 
     def test_multiple_interactions(self):
-        """5. 持续互动更新最近时间、类型和次数"""
         self.session.start(1000, "touch")
 
         self.assertTrue(
@@ -536,7 +528,6 @@ class TestCompanionSession(unittest.TestCase):
         self.assertEqual(state["interaction_count"], 3)
 
     def test_end_active_session(self):
-        """6. 结束会话但保留历史记录"""
         self.session.start(1000, "touch")
         self.session.interact(1020, "speech")
 
@@ -551,7 +542,6 @@ class TestCompanionSession(unittest.TestCase):
         self.assertEqual(state["interaction_count"], 2)
 
     def test_repeated_end_does_not_change_state(self):
-        """7. 重复结束会话不应改变已有记录"""
         self.assertFalse(self.session.end())
 
         self.session.start(1000, "touch")
@@ -563,7 +553,6 @@ class TestCompanionSession(unittest.TestCase):
         self.assertEqual(self.session.get_state(), before)
 
     def test_interact_after_end_is_ignored(self):
-        """8. 会话结束后不再累计到旧会话"""
         self.session.start(1000, "touch")
         self.session.end()
 
@@ -574,7 +563,6 @@ class TestCompanionSession(unittest.TestCase):
         self.assertEqual(self.session.get_state(), before)
 
     def test_restart_after_end(self):
-        """9. 结束后可以开始新的独立会话"""
         self.session.start(1000, "touch")
         self.session.interact(1020, "speech")
         self.session.end()
@@ -590,14 +578,11 @@ class TestCompanionSession(unittest.TestCase):
         self.assertEqual(state["interaction_count"], 1)
 
     def test_long_gap_and_state_snapshot(self):
-        """10. 长时间不互动不会自动结束；读取状态互不影响"""
         self.session.start(1000, "touch")
 
-        # 主人专心工作很久，不应自动结束会话
         state = self.session.get_state()
         self.assertTrue(state["is_active"])
 
-        # 很久之后主人再次说话
         self.assertTrue(
             self.session.interact(100000, "speech")
         )
@@ -607,13 +592,218 @@ class TestCompanionSession(unittest.TestCase):
         self.assertEqual(state["interaction_count"], 2)
         self.assertEqual(state["last_interaction_at"], 100000)
 
-        # 修改返回的字典，不应修改内部属性
         state["interaction_count"] = 999
         state["is_active"] = False
 
         actual = self.session.get_state()
         self.assertTrue(actual["is_active"])
         self.assertEqual(actual["interaction_count"], 2)
+
+    # ======================================
+    # v0.4 新增：并发测试
+    # ======================================
+
+    def test_concurrent_start_only_once(self):
+        """11. 多个线程同时开始会话，只能成功一次"""
+        results = []
+        errors = []
+        gate = threading.Event()
+
+        def worker():
+            gate.wait()
+            try:
+                result = self.session.start(
+                    1000, "touch"
+                )
+                results.append(result)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(
+                target=worker,
+                daemon=True
+            )
+            for _ in range(16)
+        ]
+
+        for thread in threads:
+            thread.start()
+
+        gate.set()
+
+        for thread in threads:
+            thread.join(timeout=2)
+
+        self.assertTrue(
+            all(not t.is_alive() for t in threads),
+            "并发 start() 疑似死锁"
+        )
+        self.assertFalse(errors, errors)
+
+        self.assertEqual(len(results), 16)
+        self.assertEqual(results.count(True), 1)
+        self.assertEqual(results.count(False), 15)
+
+        state = self.session.get_state()
+        self.assertTrue(state["is_active"])
+        self.assertEqual(state["interaction_count"], 1)
+        self.assertEqual(state["started_at"], 1000)
+
+    def test_concurrent_interactions_and_reads(self):
+        """12. 并发互动与读取，次数正确且状态保持一致"""
+        self.session.start(1000, "t1000")
+
+        errors = []
+        gate = threading.Event()
+
+        writer_count = 6
+        updates_per_writer = 100
+
+        def writer(worker_id):
+            gate.wait()
+            try:
+                for j in range(updates_per_writer):
+                    now = (
+                        1001
+                        + worker_id * updates_per_writer
+                        + j
+                    )
+                    success = self.session.interact(
+                        now,
+                        f"t{now}"
+                    )
+                    if not success:
+                        raise AssertionError(
+                            "活动会话中的互动不应失败"
+                        )
+            except Exception as exc:
+                errors.append(exc)
+
+        def reader():
+            gate.wait()
+            try:
+                for _ in range(500):
+                    state = self.session.get_state()
+
+                    if not state["is_active"]:
+                        raise AssertionError(
+                            "没有调用 end()，会话不应结束"
+                        )
+
+                    if state["started_at"] != 1000:
+                        raise AssertionError(
+                            "会话开始时间被意外修改"
+                        )
+
+                    last_time = state["last_interaction_at"]
+                    last_type = state["last_interaction_type"]
+
+                    if last_type != f"t{last_time}":
+                        raise AssertionError(
+                            "读取到时间与类型不一致的状态"
+                        )
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(
+                target=writer,
+                args=(i,),
+                daemon=True
+            )
+            for i in range(writer_count)
+        ]
+
+        threads.append(
+            threading.Thread(
+                target=reader,
+                daemon=True
+            )
+        )
+
+        for thread in threads:
+            thread.start()
+
+        gate.set()
+
+        for thread in threads:
+            thread.join(timeout=3)
+
+        self.assertTrue(
+            all(not t.is_alive() for t in threads),
+            "并发互动或读取疑似死锁"
+        )
+        self.assertFalse(errors, errors)
+
+        state = self.session.get_state()
+        expected_count = (
+            1 + writer_count * updates_per_writer
+        )
+
+        self.assertEqual(
+            state["interaction_count"],
+            expected_count
+        )
+        self.assertTrue(state["is_active"])
+        self.assertEqual(state["started_at"], 1000)
+        self.assertEqual(
+            state["last_interaction_type"],
+            f't{state["last_interaction_at"]}'
+        )
+
+    def test_concurrent_end_only_once(self):
+        """13. 多个线程同时结束会话，只能成功一次"""
+        self.session.start(1000, "touch")
+        self.session.interact(1020, "speech")
+
+        results = []
+        errors = []
+        gate = threading.Event()
+
+        def worker():
+            gate.wait()
+            try:
+                results.append(self.session.end())
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(
+                target=worker,
+                daemon=True
+            )
+            for _ in range(12)
+        ]
+
+        for thread in threads:
+            thread.start()
+
+        gate.set()
+
+        for thread in threads:
+            thread.join(timeout=2)
+
+        self.assertTrue(
+            all(not t.is_alive() for t in threads),
+            "并发 end() 疑似死锁"
+        )
+        self.assertFalse(errors, errors)
+
+        self.assertEqual(len(results), 12)
+        self.assertEqual(results.count(True), 1)
+        self.assertEqual(results.count(False), 11)
+
+        state = self.session.get_state()
+
+        self.assertFalse(state["is_active"])
+        self.assertEqual(state["started_at"], 1000)
+        self.assertEqual(state["last_interaction_at"], 1020)
+        self.assertEqual(
+            state["last_interaction_type"],
+            "speech"
+        )
+        self.assertEqual(state["interaction_count"], 2)
 
 
 if __name__ == "__main__":
