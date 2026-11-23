@@ -94,6 +94,10 @@ assert "/api/companion/session" in script_text
 assert "updateCompanionSession" in script_text
 assert "companion_session" in script_text
 assert "companionSessionStatus" in script_text
+assert "applyCompanionPollResults" in script_text
+assert "poll-guard.js" in script_text
+assert "currentEpoch: backendEpoch" in script_text
+assert "isInvitationStillRelevantPure" in script_text
 
 # 3. 本机 GET 调试状态可用，而且不会触发行为
 status = client.get("/api/debug/autonomy")

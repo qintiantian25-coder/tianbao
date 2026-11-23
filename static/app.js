@@ -11,6 +11,10 @@ import {
   loadTTSSelection,
   saveTTSSelection,
 } from "./remote-tts.js?v=0.6.2";
+import {
+  applyCompanionPollResults,
+  isInvitationStillRelevant as isInvitationStillRelevantPure,
+} from "./poll-guard.js?v=0.6.12";
 
 /* ==========================================================================
    DOM
@@ -836,15 +840,18 @@ async function pollState() {
     pollBusy = false;
   }
 
-  // Update the request status before processing events, so a stale invitation
-  // for a request that was just responded to is ignored immediately.
-  if (requestResult.status === "fulfilled") {
-    updateCompanionRequest(requestResult.value);
-  }
-
-  if (sessionResult.status === "fulfilled") {
-    updateCompanionSession(sessionResult.value);
-  }
+  // Update request/session before processing events, so a stale invitation
+  // for a request that was just responded to is ignored immediately. The
+  // epoch guard prevents a poll that started before a touch from overwriting
+  // the newer request/session state written by the touch response.
+  applyCompanionPollResults({
+    epochAtStart,
+    currentEpoch: backendEpoch,
+    requestResult,
+    sessionResult,
+    updateRequest: updateCompanionRequest,
+    updateSession: updateCompanionSession,
+  });
 
   if (eventsResult.status === "fulfilled") {
     processAutonomyEvents(eventsResult.value);
@@ -1180,19 +1187,11 @@ function autonomyEventsUrl() {
 }
 
 function isInvitationStillRelevant(action, requestId) {
-  if (action !== "interact" && action !== "seek_comfort") return true;
-  if (!Number.isInteger(requestId)) return true;
-
-  const current = appState.companionRequest;
-  if (!current) return true;
-
-  const currentId = Number(current.id);
-  if (!Number.isInteger(currentId)) return true;
-
-  if (requestId < currentId) return false;   // replaced/old invitation
-  if (requestId > currentId) return true;    // newer request not polled yet
-
-  return current.status === "pending" && current.action === action;
+  return isInvitationStillRelevantPure(
+    action,
+    requestId,
+    appState.companionRequest,
+  );
 }
 
 function processAutonomyEvents(data) {
