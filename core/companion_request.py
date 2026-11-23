@@ -12,7 +12,7 @@ class CompanionRequestTracker:
     4. 后续判断主人是否回应了请求。
     """
 
-    def __init__(self, timeout_seconds=60):
+    def __init__(self, timeout_seconds=300):
         # TODO 1：保存有效时间
         self.timeout_seconds = timeout_seconds
         # TODO 2：初始化下一个请求编号
@@ -22,23 +22,32 @@ class CompanionRequestTracker:
         # TODO 4：创建线程锁
         self.lock = threading.Lock()
 
+    # TODO 5：获取当前请求状态，等待主人回应：pending
     def start(self, action, now):
         with self.lock:
-            self.current_request = {
-                "id": self.next_request_id,
-                "action": action,
-                "created_at": now,
-                "expires_at": now + self.timeout_seconds,
-                "status": "pending"
-            }
-            self.next_request_id += 1
-            return self.current_request
+            self._refresh(now)
+            if (
+                self.current_request is not None 
+                and self.current_request["status"] == "pending"
+                and action == self.current_request["action"]
+            ):
+                return self.current_request
+            else:
+                self.current_request = {
+                    "id": self.next_request_id,
+                    "action": action,
+                    "created_at": now,
+                    "expires_at": now + self.timeout_seconds,
+                    "status": "pending"
+                }
+                self.next_request_id += 1
+                return self.current_request
 
+    # TODO 6：检查请求是否超时，及时回应：responded，过期：expired
     def _refresh(self, now):
         if self.current_request is None:
             return
         if self.current_request["status"] == "pending" and now >= self.current_request["expires_at"]:
             self.current_request["status"] = "expired"
-       
 
 
