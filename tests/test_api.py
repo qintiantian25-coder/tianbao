@@ -952,4 +952,228 @@ https_charge = serve_https.app.test_client().post("/api/charge")
 assert https_charge.status_code == 200
 assert https_charge.get_json()["state"]["energy"] == 100
 
+# ==========================================================================
+# v0.5 互动反馈 API：只读快照 + 会话频率
+# ==========================================================================
+
+def configure_feedback_state(*, emotion="calm", energy=80.0,
+                             social_need=20.0, intensity=0.0):
+    """构造确定性的 StateStore 测试状态，不触碰反馈算法本身。"""
+    app_web.store.tianbao.update({
+        "emotion": emotion,
+        "intensity": intensity,
+        "energy": energy,
+        "social_need": social_need,
+    })
+    # 冻结自然衰减/恢复，便于断言 GET 没有额外修改状态。
+    app_web.store.rates = {key: 0.0 for key in app_web.store.rates}
+
+
+def seed_feedback_session(*offsets):
+    """用现有 CompanionSession API 准备共享会话，offsets 相对当前 monotonic。"""
+    base = time.monotonic()
+    session = app_web.companion_session
+    session.start(base + offsets[0], "touch")
+    for offset in offsets[1:]:
+        session.interact(base + offset, "touch")
+    return base
+
+
+# 39. 反馈接口：初始无互动、1 次、2 次、3 次及以上
+reset_runtime()
+configure_feedback_state()
+initial_feedback = client.get("/api/companion/feedback")
+assert initial_feedback.status_code == 200
+assert initial_feedback.get_json() == {
+    "tendency": "neutral",
+    "frequency": "none",
+    "recent_count": 0,
+}
+assert app_web.companion_session.get_state()["is_active"] is False
+assert app_web.companion_session.get_state()["interaction_count"] == 0
+
+https_feedback = serve_https.app.test_client().get("/api/companion/feedback")
+assert https_feedback.status_code == 200
+assert https_feedback.get_json()["recent_count"] == 0
+
+# 接口必须委托现有 get_companion_feedback()，并传入全局 session 与 monotonic now。
+with patch.object(
+    app_web,
+    "get_companion_feedback",
+    wraps=app_web.get_companion_feedback,
+) as feedback_entry:
+    delegated = client.get("/api/companion/feedback")
+    assert delegated.status_code == 200
+    assert feedback_entry.call_count == 1
+    call_args, call_kwargs = feedback_entry.call_args
+    assert len(call_args) == 3
+    assert isinstance(call_args[0], dict)
+    assert call_args[1] is app_web.companion_session
+    assert isinstance(call_args[2], float)
+    assert call_kwargs == {}
+assert delegated.get_json() == {
+    "tendency": "neutral",
+    "frequency": "none",
+    "recent_count": 0,
+}
+
+base = time.monotonic()
+app_web.companion_session.start(base - 4, "touch")
+one_feedback = client.get("/api/companion/feedback").get_json()
+assert one_feedback == {
+    "tendency": "neutral",
+    "frequency": "low",
+    "recent_count": 1,
+}
+
+app_web.companion_session.interact(base - 3, "touch")
+two_feedback = client.get("/api/companion/feedback").get_json()
+assert two_feedback == {
+    "tendency": "neutral",
+    "frequency": "low",
+    "recent_count": 2,
+}
+
+app_web.companion_session.interact(base - 2, "touch")
+three_feedback = client.get("/api/companion/feedback").get_json()
+assert three_feedback == {
+    "tendency": "affectionate",
+    "frequency": "frequent",
+    "recent_count": 3,
+}
+
+app_web.companion_session.interact(base - 1, "touch")
+four_feedback = client.get("/api/companion/feedback").get_json()
+assert four_feedback == {
+    "tendency": "affectionate",
+    "frequency": "frequent",
+    "recent_count": 4,
+}
+
+# 40. 五分钟窗口过期：会话仍 active，但旧互动不再计入反馈
+reset_runtime()
+configure_feedback_state()
+expired_base = time.monotonic()
+app_web.companion_session.start(expired_base - 400, "touch")
+app_web.companion_session.interact(expired_base - 350, "touch")
+app_web.companion_session.interact(expired_base - 301, "touch")
+expired_feedback = client.get("/api/companion/feedback").get_json()
+assert expired_feedback == {
+    "tendency": "neutral",
+    "frequency": "none",
+    "recent_count": 0,
+}
+expired_session = app_web.companion_session.get_state()
+assert expired_session["is_active"] is True
+assert expired_session["interaction_count"] == 3
+
+# 41. 结束会话：历史保留，但反馈按无活动会话返回 0 次
+reset_runtime()
+configure_feedback_state()
+ended_base = time.monotonic()
+app_web.companion_session.start(ended_base - 2, "touch")
+app_web.companion_session.interact(ended_base - 1, "touch")
+app_web.companion_session.interact(ended_base - 0.5, "touch")
+assert client.get("/api/companion/feedback").get_json()["recent_count"] == 3
+
+assert app_web.companion_session.end() is True
+ended_feedback = client.get("/api/companion/feedback").get_json()
+assert ended_feedback == {
+    "tendency": "neutral",
+    "frequency": "none",
+    "recent_count": 0,
+}
+ended_session = app_web.companion_session.get_state()
+assert ended_session["is_active"] is False
+assert ended_session["interaction_count"] == 3
+
+# 42. 重新开始会话：只统计新会话的互动
+reset_runtime()
+configure_feedback_state()
+restart_base = time.monotonic()
+app_web.companion_session.start(restart_base - 2, "touch")
+app_web.companion_session.interact(restart_base - 1, "touch")
+app_web.companion_session.interact(restart_base - 0.5, "touch")
+assert app_web.companion_session.end() is True
+app_web.companion_session.start(time.monotonic(), "touch")
+restart_feedback = client.get("/api/companion/feedback").get_json()
+assert restart_feedback == {
+    "tendency": "neutral",
+    "frequency": "low",
+    "recent_count": 1,
+}
+assert app_web.companion_session.get_state()["interaction_count"] == 1
+
+# 43. 伤心 / 疲倦 / 活泼的既有优先级不被频繁互动覆盖
+reset_runtime()
+configure_feedback_state()
+priority_base = time.monotonic()
+app_web.companion_session.start(priority_base - 3, "touch")
+app_web.companion_session.interact(priority_base - 2, "touch")
+app_web.companion_session.interact(priority_base - 1, "touch")
+
+priority_cases = [
+    ("sad", 80.0, 80.0, 20.0, "gentle"),
+    ("happy", 20.0, 80.0, 20.0, "tired"),
+    ("happy", 80.0, 80.0, 20.0, "playful"),
+    ("calm", 80.0, 0.0, 80.0, "affectionate"),
+]
+for emotion, energy, intensity, social_need, expected in priority_cases:
+    app_web.store.tianbao.update({
+        "emotion": emotion,
+        "intensity": intensity,
+        "energy": energy,
+        "social_need": social_need,
+    })
+    before_state = dict(app_web.store.tianbao)
+    feedback = client.get("/api/companion/feedback").get_json()
+    assert feedback == {
+        "tendency": expected,
+        "frequency": "frequent",
+        "recent_count": 3,
+    }
+    assert app_web.store.tianbao == before_state
+
+# 44. 多次 GET 无副作用：不推进会话、不创建请求、不改状态/事件/冷却
+reset_runtime()
+configure_feedback_state()
+side_base = time.monotonic()
+app_web.companion_session.start(side_base - 3, "touch")
+app_web.companion_session.interact(side_base - 2, "touch")
+app_web.companion_session.interact(side_base - 1, "touch")
+
+session_before = app_web.companion_session.get_state()
+snapshot_before = app_web.companion_session.get_feedback_snapshot(time.monotonic())
+request_before = app_web.companion_tracker.get_current(time.monotonic())
+next_request_id_before = app_web.companion_tracker.next_request_id
+events_before = app_web.autonomy_events.latest_id
+cooldown_before = app_web.autonomy_scheduler.last_interact_at
+state_before = app_web.store.get_state()
+store_before = dict(app_web.store.tianbao)
+
+responses = []
+with patch.object(app_web, "run_autonomy_once") as shared_entry:
+    for _ in range(5):
+        response = client.get("/api/companion/feedback")
+        assert response.status_code == 200
+        responses.append(response.get_json())
+    shared_entry.assert_not_called()
+
+assert all(response == responses[0] for response in responses)
+assert responses[0] == {
+    "tendency": "affectionate",
+    "frequency": "frequent",
+    "recent_count": 3,
+}
+assert app_web.store.get_state() == state_before
+assert app_web.store.tianbao == store_before
+assert app_web.companion_session.get_state() == session_before
+assert app_web.companion_session.get_feedback_snapshot(time.monotonic()) == snapshot_before
+assert app_web.companion_tracker.get_current(time.monotonic()) == request_before
+assert app_web.companion_tracker.next_request_id == next_request_id_before
+assert app_web.autonomy_events.latest_id == events_before
+assert app_web.autonomy_scheduler.last_interact_at == cooldown_before
+assert client.get("/api/companion/feedback").status_code == 200
+assert client.post("/api/companion/feedback").status_code == 405
+
 print("后端接口集成测试通过！")

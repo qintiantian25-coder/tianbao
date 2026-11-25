@@ -30,6 +30,7 @@ from core.action_executor import execute_action
 from core.behavior_scheduler import BehaviorScheduler
 from core.companion_request import CompanionRequestTracker
 from core.companion_session import CompanionSession
+from core.interaction_tendency import get_companion_feedback
 from core.state_store import StateStore
 
 
@@ -200,6 +201,32 @@ def get_companion_session():
         state = companion_session.get_state()
 
     return jsonify(state)
+
+
+# =========================
+# 4d. 互动反馈（只读）
+# =========================
+
+@app.get("/api/companion/feedback")
+def companion_feedback():
+    """只读：返回当前状态 + 陪伴会话的互动反馈。
+
+    - ``state`` 来自共享 StateStore，``session`` 是全局 CompanionSession。
+    - ``now`` 与 /api/touch 中的 session.start()/interact() 一致，使用
+      time.monotonic()。
+    - 只调用 get_companion_feedback()，其内部使用
+      session.get_feedback_snapshot(now) 原子读取会话状态和近期次数；
+      不调用 session.start()/interact()/session.get_state() 等会推进或读取
+      非原子分步状态的方法。
+    - 锁顺序与现有请求一致：_autonomy_lock -> StateStore -> CompanionSession，
+      避免和摸头/后台行为并发时读到半更新状态。
+    """
+    with _autonomy_lock:
+        now = time.monotonic()
+        state = store.get_state()
+        feedback = get_companion_feedback(state, companion_session, now)
+
+    return jsonify(feedback)
 
 
 # =========================
