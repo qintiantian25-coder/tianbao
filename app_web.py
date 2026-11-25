@@ -30,6 +30,7 @@ from core.action_executor import execute_action
 from core.behavior_scheduler import BehaviorScheduler
 from core.companion_request import CompanionRequestTracker
 from core.companion_session import CompanionSession
+from core.expression_policy import build_companion_expression
 from core.interaction_tendency import get_companion_feedback
 from core.state_store import StateStore
 
@@ -227,6 +228,32 @@ def companion_feedback():
         feedback = get_companion_feedback(state, companion_session, now)
 
     return jsonify(feedback)
+
+
+# =========================
+# 4e. 表达策略（只读）
+# =========================
+
+@app.get("/api/companion/expression")
+def companion_expression():
+    """只读：在同一个受保护流程中生成当前表达策略。
+
+    复用现有数据源与算法：
+    - 共享 StateStore 提供 state；
+    - 共享 CompanionSession 提供会话快照；
+    - time.monotonic() 与 /api/touch 的 session 时间基准一致；
+    - get_companion_feedback() 生成反馈；
+    - build_companion_expression() 把反馈转换成表达策略。
+
+    不调用会话推进、请求创建、自主决策、TTS 或大模型接口。
+    """
+    with _autonomy_lock:
+        now = time.monotonic()
+        state = store.get_state()
+        feedback = get_companion_feedback(state, companion_session, now)
+        expression = build_companion_expression(feedback)
+
+    return jsonify(expression)
 
 
 # =========================

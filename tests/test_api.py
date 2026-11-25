@@ -1176,4 +1176,254 @@ assert app_web.autonomy_scheduler.last_interact_at == cooldown_before
 assert client.get("/api/companion/feedback").status_code == 200
 assert client.post("/api/companion/feedback").status_code == 405
 
+# ==========================================================================
+# v0.6 表达策略 API
+# ==========================================================================
+
+EXPRESSION_BY_TENDENCY = {
+    "gentle": {
+        "tone": "soft",
+        "response_length": "short",
+        "initiative": "low",
+    },
+    "tired": {
+        "tone": "quiet",
+        "response_length": "brief",
+        "initiative": "low",
+    },
+    "playful": {
+        "tone": "lively",
+        "response_length": "normal",
+        "initiative": "high",
+    },
+    "affectionate": {
+        "tone": "warm",
+        "response_length": "short",
+        "initiative": "high",
+    },
+    "neutral": {
+        "tone": "natural",
+        "response_length": "normal",
+        "initiative": "medium",
+    },
+}
+
+
+def expected_expression(tendency, frequency, recent_count):
+    return {
+        "tendency": tendency,
+        "frequency": frequency,
+        "recent_count": recent_count,
+        "expression": dict(EXPRESSION_BY_TENDENCY[tendency]),
+    }
+
+
+def assert_expression_shape(payload):
+    assert set(payload) == {
+        "tendency",
+        "frequency",
+        "recent_count",
+        "expression",
+    }
+    assert set(payload["expression"]) == {
+        "tone",
+        "response_length",
+        "initiative",
+    }
+
+
+# 45. 表达接口：无互动 / 1 次 / 2 次 / 3 次及以上；HTTPS 与 POST 行为
+reset_runtime()
+configure_feedback_state()
+initial_expression = client.get("/api/companion/expression")
+assert initial_expression.status_code == 200
+initial_payload = initial_expression.get_json()
+assert initial_payload == expected_expression("neutral", "none", 0)
+assert_expression_shape(initial_payload)
+assert app_web.companion_session.get_state()["is_active"] is False
+assert app_web.companion_session.get_state()["interaction_count"] == 0
+
+# 既有 feedback 接口结构不能被 expression 集成改变。
+feedback_still_flat = client.get("/api/companion/feedback").get_json()
+assert feedback_still_flat == {
+    "tendency": "neutral",
+    "frequency": "none",
+    "recent_count": 0,
+}
+
+https_expression = serve_https.app.test_client().get(
+    "/api/companion/expression"
+)
+assert https_expression.status_code == 200
+assert https_expression.get_json() == initial_payload
+assert client.post("/api/companion/expression").status_code == 405
+
+base = time.monotonic()
+app_web.companion_session.start(base - 4, "touch")
+one_expression = client.get("/api/companion/expression").get_json()
+assert one_expression == expected_expression("neutral", "low", 1)
+assert_expression_shape(one_expression)
+
+app_web.companion_session.interact(base - 3, "touch")
+two_expression = client.get("/api/companion/expression").get_json()
+assert two_expression == expected_expression("neutral", "low", 2)
+assert_expression_shape(two_expression)
+
+app_web.companion_session.interact(base - 2, "touch")
+three_expression = client.get("/api/companion/expression").get_json()
+assert three_expression == expected_expression("affectionate", "frequent", 3)
+assert_expression_shape(three_expression)
+
+app_web.companion_session.interact(base - 1, "touch")
+four_expression = client.get("/api/companion/expression").get_json()
+assert four_expression == expected_expression("affectionate", "frequent", 4)
+assert_expression_shape(four_expression)
+
+# 46. 300 秒窗口过期：旧互动不再影响反馈/表达，但会话仍保持 active
+reset_runtime()
+configure_feedback_state()
+expired_base = time.monotonic()
+app_web.companion_session.start(expired_base - 400, "touch")
+app_web.companion_session.interact(expired_base - 350, "touch")
+app_web.companion_session.interact(expired_base - 301, "touch")
+expired_expression = client.get("/api/companion/expression").get_json()
+assert expired_expression == expected_expression("neutral", "none", 0)
+assert_expression_shape(expired_expression)
+expired_state = app_web.companion_session.get_state()
+assert expired_state["is_active"] is True
+assert expired_state["interaction_count"] == 3
+
+# 47. 结束会话与重新开始会话
+reset_runtime()
+configure_feedback_state()
+session_base = time.monotonic()
+app_web.companion_session.start(session_base - 2, "touch")
+app_web.companion_session.interact(session_base - 1, "touch")
+app_web.companion_session.interact(session_base - 0.5, "touch")
+assert client.get("/api/companion/expression").get_json() == (
+    expected_expression("affectionate", "frequent", 3)
+)
+assert app_web.companion_session.end() is True
+ended_expression = client.get("/api/companion/expression").get_json()
+assert ended_expression == expected_expression("neutral", "none", 0)
+assert_expression_shape(ended_expression)
+ended_state = app_web.companion_session.get_state()
+assert ended_state["is_active"] is False
+assert ended_state["interaction_count"] == 3
+
+app_web.companion_session.start(time.monotonic(), "touch")
+restarted_expression = client.get("/api/companion/expression").get_json()
+assert restarted_expression == expected_expression("neutral", "low", 1)
+assert_expression_shape(restarted_expression)
+assert app_web.companion_session.get_state()["interaction_count"] == 1
+
+# 48. 五种倾向及对应的完整表达策略
+reset_runtime()
+configure_feedback_state()
+neutral_expression = client.get("/api/companion/expression").get_json()
+assert neutral_expression == expected_expression("neutral", "none", 0)
+assert_expression_shape(neutral_expression)
+
+priority_base = time.monotonic()
+app_web.companion_session.start(priority_base - 3, "touch")
+app_web.companion_session.interact(priority_base - 2, "touch")
+app_web.companion_session.interact(priority_base - 1, "touch")
+
+priority_cases = [
+    ("sad", 80.0, 80.0, 20.0, "gentle"),
+    ("happy", 20.0, 80.0, 20.0, "tired"),
+    ("happy", 80.0, 80.0, 20.0, "playful"),
+    ("calm", 80.0, 0.0, 80.0, "affectionate"),
+]
+for emotion, energy, intensity, social_need, tendency in priority_cases:
+    app_web.store.tianbao.update({
+        "emotion": emotion,
+        "intensity": intensity,
+        "energy": energy,
+        "social_need": social_need,
+    })
+    before_state = dict(app_web.store.tianbao)
+    payload = client.get("/api/companion/expression").get_json()
+    assert payload == expected_expression(tendency, "frequent", 3)
+    assert_expression_shape(payload)
+    assert app_web.store.tianbao == before_state
+
+# 49. 连续 GET 无副作用：不推进会话、不创建邀请、不触发自主决策
+reset_runtime()
+configure_feedback_state()
+side_base = time.monotonic()
+app_web.companion_session.start(side_base - 3, "touch")
+app_web.companion_session.interact(side_base - 2, "touch")
+app_web.companion_session.interact(side_base - 1, "touch")
+
+session_before = app_web.companion_session.get_state()
+snapshot_before = app_web.companion_session.get_feedback_snapshot(time.monotonic())
+request_before = app_web.companion_tracker.get_current(time.monotonic())
+next_request_id_before = app_web.companion_tracker.next_request_id
+events_before = app_web.autonomy_events.latest_id
+cooldown_before = app_web.autonomy_scheduler.last_interact_at
+state_before = app_web.store.get_state()
+store_before = dict(app_web.store.tianbao)
+
+expression_responses = []
+with patch.object(app_web, "run_autonomy_once") as shared_entry:
+    for _ in range(5):
+        response = client.get("/api/companion/expression")
+        assert response.status_code == 200
+        expression_responses.append(response.get_json())
+    shared_entry.assert_not_called()
+
+assert all(response == expression_responses[0] for response in expression_responses)
+assert expression_responses[0] == expected_expression(
+    "affectionate", "frequent", 3
+)
+assert app_web.store.get_state() == state_before
+assert app_web.store.tianbao == store_before
+assert app_web.companion_session.get_state() == session_before
+assert app_web.companion_session.get_feedback_snapshot(time.monotonic()) == snapshot_before
+assert app_web.companion_tracker.get_current(time.monotonic()) == request_before
+assert app_web.companion_tracker.next_request_id == next_request_id_before
+assert app_web.autonomy_events.latest_id == events_before
+assert app_web.autonomy_scheduler.last_interact_at == cooldown_before
+assert client.post("/api/companion/expression").status_code == 405
+
+# 50. 验证实际委托两个用户编写的核心函数，而不是在路由里重新实现
+reset_runtime()
+configure_feedback_state()
+sentinel_feedback = {
+    "tendency": "playful",
+    "frequency": "frequent",
+    "recent_count": 9,
+}
+with patch.object(
+    app_web,
+    "get_companion_feedback",
+    return_value=sentinel_feedback,
+) as feedback_entry, patch.object(
+    app_web,
+    "build_companion_expression",
+    wraps=app_web.build_companion_expression,
+) as expression_entry:
+    delegated_expression = client.get("/api/companion/expression")
+    assert delegated_expression.status_code == 200
+
+assert feedback_entry.call_count == 1
+feedback_args, feedback_kwargs = feedback_entry.call_args
+assert len(feedback_args) == 3
+assert isinstance(feedback_args[0], dict)
+assert feedback_args[1] is app_web.companion_session
+assert isinstance(feedback_args[2], float)
+assert feedback_kwargs == {}
+
+assert expression_entry.call_count == 1
+expression_args, expression_kwargs = expression_entry.call_args
+assert len(expression_args) == 1
+assert expression_args[0] is sentinel_feedback
+assert expression_kwargs == {}
+
+assert delegated_expression.get_json() == expected_expression(
+    "playful", "frequent", 9
+)
+assert_expression_shape(delegated_expression.get_json())
+
 print("后端接口集成测试通过！")
