@@ -15,6 +15,7 @@ from core.action_executor import execute_action
 from core.state_store import StateStore
 from core.companion_request import CompanionRequestTracker
 from core.companion_session import CompanionSession
+from core.interaction_tendency import get_companion_feedback
 from core.interaction_tendency import (
     decide_interaction_tendency,
     is_recent_interaction,
@@ -1293,6 +1294,122 @@ class TestFrequencyTendency(unittest.TestCase):
         )
         self.assertEqual(state, original_state)
         self.assertEqual(times, original_times)
+
+
+
+
+class TestCompanionFeedbackEntry(unittest.TestCase):
+    """v0.5 陪伴会话与互动反馈综合测试。"""
+
+    def setUp(self):
+        self.session = CompanionSession()
+        self.state = {
+            "emotion": "calm",
+            "energy": 80,
+            "social_need": 20
+        }
+
+    def test_feedback_without_session(self):
+        """没有开始会话时，近期互动次数为0。"""
+        result = get_companion_feedback(
+            self.state, self.session, 1000
+        )
+
+        self.assertEqual(result, {
+            "tendency": "neutral",
+            "frequency": "none",
+            "recent_count": 0
+        })
+
+    def test_feedback_one_or_two_interactions(self):
+        """1～2次互动属于低频，不改变中性倾向。"""
+        self.session.start(1000, "touch")
+
+        result = get_companion_feedback(
+            self.state, self.session, 1000
+        )
+
+        self.assertEqual(result["frequency"], "low")
+        self.assertEqual(result["recent_count"], 1)
+        self.assertEqual(result["tendency"], "neutral")
+
+        self.session.interact(1020, "touch")
+
+        result = get_companion_feedback(
+            self.state, self.session, 1020
+        )
+
+        self.assertEqual(result["frequency"], "low")
+        self.assertEqual(result["recent_count"], 2)
+        self.assertEqual(result["tendency"], "neutral")
+
+    def test_feedback_frequent_interactions(self):
+        """最近5分钟至少3次互动，转为亲昵倾向。"""
+        self.session.start(1000, "touch")
+        self.session.interact(1020, "touch")
+        self.session.interact(1040, "touch")
+
+        result = get_companion_feedback(
+            self.state, self.session, 1040
+        )
+
+        self.assertEqual(result, {
+            "tendency": "affectionate",
+            "frequency": "frequent",
+            "recent_count": 3
+        })
+
+    def test_feedback_after_long_silence(self):
+        """长时间不互动，频率归零但会话不结束。"""
+        self.session.start(1000, "touch")
+        self.session.interact(1020, "touch")
+        self.session.interact(1040, "touch")
+
+        result = get_companion_feedback(
+            self.state, self.session, 1400
+        )
+
+        self.assertEqual(result["recent_count"], 0)
+        self.assertEqual(result["frequency"], "none")
+        self.assertEqual(result["tendency"], "neutral")
+
+        self.assertTrue(
+            self.session.get_state()["is_active"]
+        )
+        self.assertEqual(
+            self.session.get_state()["interaction_count"],
+            3
+        )
+
+    def test_feedback_preserves_emotion_priority(self):
+        """频繁互动不能覆盖已有的伤心、疲倦或活泼倾向。"""
+        self.session.start(1000, "touch")
+        self.session.interact(1020, "touch")
+        self.session.interact(1040, "touch")
+
+        cases = [
+            ("sad", 80, "gentle"),
+            ("happy", 20, "tired"),
+            ("happy", 80, "playful"),
+        ]
+
+        for emotion, energy, expected in cases:
+            with self.subTest(emotion=emotion, energy=energy):
+                state = {
+                    "emotion": emotion,
+                    "energy": energy,
+                    "social_need": 20
+                }
+                original = state.copy()
+
+                result = get_companion_feedback(
+                    state, self.session, 1040
+                )
+
+                self.assertEqual(
+                    result["tendency"], expected
+                )
+                self.assertEqual(state, original)
 
 
 if __name__ == "__main__":

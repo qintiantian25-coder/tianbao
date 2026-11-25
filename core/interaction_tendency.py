@@ -64,3 +64,24 @@ def decide_tendency_with_frequency(state, recent_count):
     frequency = decide_interaction_frequency(recent_count)
     result = decide_frequency_tendency(base_tendency, frequency)
     return result
+
+# 构建tianbao的互动反馈信息
+def build_interaction_feedback(state, recent_count):
+    tendency = decide_tendency_with_frequency(state, recent_count)
+    frequency = decide_interaction_frequency(recent_count)
+    return {
+        "tendency": tendency,
+        "frequency": frequency,
+        "recent_count": recent_count
+    }
+
+# 根据tianbao当前状态与陪伴对话，生成互动反馈
+def get_companion_feedback(state, session, now):
+    session_state = session.get_state()
+    if session_state["is_active"] is True:       
+       recent_count = session.get_recent_count(now)
+    else:
+        recent_count = 0
+    feedback = build_interaction_feedback(state, recent_count)
+    return feedback
+    
