@@ -24,8 +24,10 @@ class CompanionSession:
         # TODO 5：累计互动次数
         # 属性名：interaction_count
         self.interaction_count = 0
+        # TODO 6：保存互动时间历史
+        self.interaction_times = []
 
-    # TODO 6：开始陪伴会话
+    # TODO 7：开始陪伴会话
     def start(self, now, interaction_type):
         with self.lock:
             if self.is_active is True:
@@ -37,7 +39,7 @@ class CompanionSession:
             self.interaction_count = 1
             return True
 
-    # TODO 7：记录后续互动
+    # TODO 8：记录后续互动
     def interact(self, now, interaction_type):
         with self.lock:
             if self.is_active is False:
@@ -47,7 +49,7 @@ class CompanionSession:
             self.interaction_count += 1
             return True
 
-    # TODO 8：读取陪伴状态
+    # TODO 9：读取陪伴状态
     def get_state(self):
         with self.lock:
             return {
@@ -58,7 +60,7 @@ class CompanionSession:
                 "interaction_count": self.interaction_count
             }
 
-    # TODO 9：结束陪伴会话
+    # TODO 10：结束陪伴会话
     def end(self):
         with self.lock:
             if self.is_active is False:
