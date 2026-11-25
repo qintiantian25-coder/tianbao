@@ -1611,5 +1611,117 @@ class TestCompanionFeedbackSnapshot(unittest.TestCase):
         })
 
 
+
+
+from core.expression_policy import (
+    decide_speech_tone,
+    decide_response_length,
+    decide_expression_initiative,
+    build_expression_policy,
+    build_companion_expression,
+)
+
+
+class TestExpressionPolicy(unittest.TestCase):
+    """v0.6 表达策略正式测试。"""
+
+    def test_speech_tone(self):
+        """五种语气及未知值默认处理。"""
+        cases = {
+            "gentle": "soft",
+            "tired": "quiet",
+            "playful": "lively",
+            "affectionate": "warm",
+            "neutral": "natural",
+            "unknown": "natural",
+        }
+        for tendency, expected in cases.items():
+            with self.subTest(tendency=tendency):
+                self.assertEqual(
+                    decide_speech_tone(tendency), expected
+                )
+
+    def test_response_length(self):
+        """不同互动倾向对应正确回复长度。"""
+        cases = {
+            "gentle": "short",
+            "tired": "brief",
+            "playful": "normal",
+            "affectionate": "short",
+            "neutral": "normal",
+            "unknown": "normal",
+        }
+        for tendency, expected in cases.items():
+            with self.subTest(tendency=tendency):
+                self.assertEqual(
+                    decide_response_length(tendency), expected
+                )
+
+    def test_expression_initiative(self):
+        """表达主动程度不混用 normal 与 medium。"""
+        cases = {
+            "gentle": "low",
+            "tired": "low",
+            "playful": "high",
+            "affectionate": "high",
+            "neutral": "medium",
+            "unknown": "medium",
+        }
+        for tendency, expected in cases.items():
+            with self.subTest(tendency=tendency):
+                self.assertEqual(
+                    decide_expression_initiative(tendency), expected
+                )
+
+    def test_build_expression_policy(self):
+        """三个基础函数正确组合。"""
+        result = build_expression_policy("affectionate")
+        self.assertEqual(result, {
+            "tone": "warm",
+            "response_length": "short",
+            "initiative": "high",
+        })
+
+    def test_companion_expression(self):
+        """v0.5 反馈正确转换为嵌套表达字典。"""
+        feedback = {
+            "tendency": "affectionate",
+            "frequency": "frequent",
+            "recent_count": 3,
+        }
+
+        result = build_companion_expression(feedback)
+
+        self.assertEqual(result, {
+            "tendency": "affectionate",
+            "frequency": "frequent",
+            "recent_count": 3,
+            "expression": {
+                "tone": "warm",
+                "response_length": "short",
+                "initiative": "high",
+            },
+        })
+
+    def test_preserves_input_and_default(self):
+        """不修改输入；未知倾向按默认策略处理。"""
+        feedback = {
+            "tendency": "unknown",
+            "frequency": "low",
+            "recent_count": 2,
+        }
+        original = feedback.copy()
+
+        result = build_companion_expression(feedback)
+
+        self.assertEqual(feedback, original)
+        self.assertIsNot(result, feedback)
+        self.assertEqual(result["expression"], {
+            "tone": "natural",
+            "response_length": "normal",
+            "initiative": "medium",
+        })
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
