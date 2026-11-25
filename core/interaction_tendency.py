@@ -77,11 +77,8 @@ def build_interaction_feedback(state, recent_count):
 
 # 根据tianbao当前状态与陪伴对话，生成互动反馈
 def get_companion_feedback(state, session, now):
-    session_state = session.get_state()
-    if session_state["is_active"] is True:       
-       recent_count = session.get_recent_count(now)
-    else:
-        recent_count = 0
+    snapshot = session.get_feedback_snapshot(now)
+    recent_count = snapshot["recent_count"]
     feedback = build_interaction_feedback(state, recent_count)
     return feedback
-    
+

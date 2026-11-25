@@ -83,3 +83,17 @@ class CompanionSession:
                 return False
             self.is_active = False
             return True
+        
+    # 原子读取陪伴会话的活动状态和近期互动次数
+    def get_feedback_snapshot(self, now):
+        with self.lock:
+            recent_count = 0
+            if self.is_active:
+                for interaction_time in self.interaction_times:
+                    elapsed_seconds = now - interaction_time
+                    if 0 <= elapsed_seconds <= 300:
+                        recent_count += 1
+            return {
+                "is_active": self.is_active,
+                "recent_count": recent_count
+            }

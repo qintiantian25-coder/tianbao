@@ -1412,5 +1412,204 @@ class TestCompanionFeedbackEntry(unittest.TestCase):
                 self.assertEqual(state, original)
 
 
+
+class TestCompanionFeedbackEndBoundary(unittest.TestCase):
+    """v0.5 结束会话后的互动反馈测试。"""
+
+    def setUp(self):
+        self.session = CompanionSession()
+        self.state = {
+            "emotion": "calm",
+            "energy": 80,
+            "social_need": 20
+        }
+
+    def test_end_ignores_previous_interactions(self):
+        """结束后，旧互动历史不参与实时反馈。"""
+        self.session.start(1000, "touch")
+        self.session.interact(1020, "touch")
+        self.session.interact(1040, "touch")
+
+        self.assertTrue(self.session.end())
+
+        # 历史仍然保留
+        self.assertEqual(
+            self.session.get_recent_count(1050),
+            3
+        )
+
+        feedback = get_companion_feedback(
+            self.state, self.session, 1050
+        )
+
+        self.assertEqual(feedback, {
+            "tendency": "neutral",
+            "frequency": "none",
+            "recent_count": 0
+        })
+
+        self.assertFalse(
+            self.session.get_state()["is_active"]
+        )
+
+    def test_restart_uses_new_session(self):
+        """重新开始后，只统计新会话互动。"""
+        self.session.start(1000, "touch")
+        self.session.interact(1020, "touch")
+        self.session.interact(1040, "touch")
+        self.session.end()
+
+        self.session.start(1050, "touch")
+
+        feedback = get_companion_feedback(
+            self.state, self.session, 1050
+        )
+
+        self.assertEqual(feedback, {
+            "tendency": "neutral",
+            "frequency": "low",
+            "recent_count": 1
+        })
+
+    def test_end_preserves_basic_emotion_tendency(self):
+        """结束会话不影响原本的情绪表达倾向。"""
+        self.session.start(1000, "touch")
+        self.session.end()
+
+        sad_state = {
+            "emotion": "sad",
+            "energy": 80,
+            "social_need": 20
+        }
+
+        feedback = get_companion_feedback(
+            sad_state, self.session, 1050
+        )
+
+        self.assertEqual(feedback["tendency"], "gentle")
+        self.assertEqual(feedback["frequency"], "none")
+        self.assertEqual(feedback["recent_count"], 0)
+
+
+
+class TestCompanionFeedbackSnapshot(unittest.TestCase):
+    """v0.5 原子快照和反馈接入测试。"""
+
+    def setUp(self):
+        self.session = CompanionSession()
+        self.state = {
+            "emotion": "calm",
+            "energy": 80,
+            "social_need": 20
+        }
+
+    def test_initial_snapshot(self):
+        """未开始会话时返回非活动状态和0次互动。"""
+        snapshot = self.session.get_feedback_snapshot(1000)
+
+        self.assertEqual(snapshot, {
+            "is_active": False,
+            "recent_count": 0
+        })
+
+    def test_active_snapshot_and_boundaries(self):
+        """活动会话正确处理300秒边界。"""
+        self.session.start(1000, "touch")
+        self.session.interact(1020, "touch")
+        self.session.interact(1040, "touch")
+
+        self.assertEqual(
+            self.session.get_feedback_snapshot(1040)["recent_count"],
+            3
+        )
+
+        # 1000距离1300恰好300秒，应计入
+        self.assertEqual(
+            self.session.get_feedback_snapshot(1300)["recent_count"],
+            3
+        )
+
+        # 1000已经超过300秒，仅剩1020和1040
+        self.assertEqual(
+            self.session.get_feedback_snapshot(1301)["recent_count"],
+            2
+        )
+
+        self.assertEqual(
+            self.session.get_feedback_snapshot(1341)["recent_count"],
+            0
+        )
+
+        # 只读快照不应该结束会话
+        self.assertTrue(
+            self.session.get_state()["is_active"]
+        )
+
+    def test_ended_snapshot_preserves_history(self):
+        """结束会话后，快照返回0但历史仍然保留。"""
+        self.session.start(1000, "touch")
+        self.session.interact(1020, "touch")
+        self.session.interact(1040, "touch")
+        self.session.end()
+
+        snapshot = self.session.get_feedback_snapshot(1050)
+
+        self.assertEqual(snapshot, {
+            "is_active": False,
+            "recent_count": 0
+        })
+
+        self.assertEqual(
+            self.session.get_recent_count(1050),
+            3
+        )
+
+    def test_restart_snapshot(self):
+        """重新开始会话后只统计新会话的互动。"""
+        self.session.start(1000, "touch")
+        self.session.interact(1020, "touch")
+        self.session.interact(1040, "touch")
+        self.session.end()
+
+        self.session.start(1050, "touch")
+
+        snapshot = self.session.get_feedback_snapshot(1050)
+
+        self.assertEqual(snapshot, {
+            "is_active": True,
+            "recent_count": 1
+        })
+
+    def test_feedback_uses_snapshot(self):
+        """反馈入口必须使用原子快照，不依赖旧的分步读取方法。"""
+
+        class SnapshotOnlySession:
+            def get_feedback_snapshot(self, now):
+                if now != 1040:
+                    raise AssertionError("传入时间错误")
+                return {
+                    "is_active": True,
+                    "recent_count": 3
+                }
+
+            def get_state(self):
+                raise AssertionError("不应调用旧的 get_state")
+
+            def get_recent_count(self, now):
+                raise AssertionError(
+                    "不应调用旧的 get_recent_count"
+                )
+
+        feedback = get_companion_feedback(
+            self.state, SnapshotOnlySession(), 1040
+        )
+
+        self.assertEqual(feedback, {
+            "tendency": "affectionate",
+            "frequency": "frequent",
+            "recent_count": 3
+        })
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
