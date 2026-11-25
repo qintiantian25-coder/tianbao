@@ -1172,5 +1172,128 @@ class TestCompanionSessionRecentHistory(unittest.TestCase):
         )
 
 
+
+from core.interaction_tendency import (
+    decide_interaction_frequency,
+    decide_frequency_tendency,
+    decide_tendency_with_frequency,
+    count_recent_interactions,
+)
+
+
+class TestFrequencyTendency(unittest.TestCase):
+    """v0.5 互动频率与最终表达倾向测试。"""
+
+    def test_frequency_boundaries(self):
+        """验证0、1、2、3次等频率边界。"""
+        cases = [
+            (0, "none"),
+            (1, "low"),
+            (2, "low"),
+            (3, "frequent"),
+            (10, "frequent"),
+        ]
+
+        for count, expected in cases:
+            with self.subTest(count=count):
+                self.assertEqual(
+                    decide_interaction_frequency(count),
+                    expected
+                )
+
+    def test_neutral_frequency_adjustment(self):
+        """只有频繁互动才将中性转为亲昵。"""
+        cases = [
+            ("none", "neutral"),
+            ("low", "neutral"),
+            ("frequent", "affectionate"),
+        ]
+
+        for frequency, expected in cases:
+            with self.subTest(frequency=frequency):
+                self.assertEqual(
+                    decide_frequency_tendency(
+                        "neutral", frequency
+                    ),
+                    expected
+                )
+
+    def test_preserve_existing_tendencies(self):
+        """频率不应覆盖其他已有倾向。"""
+        tendencies = [
+            "gentle",
+            "tired",
+            "playful",
+            "affectionate",
+        ]
+
+        for tendency in tendencies:
+            for frequency in ("none", "low", "frequent"):
+                with self.subTest(
+                    tendency=tendency,
+                    frequency=frequency
+                ):
+                    self.assertEqual(
+                        decide_frequency_tendency(
+                            tendency, frequency
+                        ),
+                        tendency
+                    )
+
+    def test_combined_tendency(self):
+        """综合状态与频率判断最终倾向。"""
+        cases = [
+            ("sad", 80, 20, 4, "gentle"),
+            ("happy", 20, 90, 5, "tired"),
+            ("happy", 80, 90, 4, "playful"),
+            ("calm", 80, 75, 0, "affectionate"),
+            ("calm", 80, 20, 2, "neutral"),
+            ("calm", 80, 20, 3, "affectionate"),
+        ]
+
+        for emotion, energy, social, count, expected in cases:
+            state = {
+                "emotion": emotion,
+                "energy": energy,
+                "social_need": social,
+            }
+
+            with self.subTest(
+                emotion=emotion,
+                count=count
+            ):
+                self.assertEqual(
+                    decide_tendency_with_frequency(
+                        state, count
+                    ),
+                    expected
+                )
+
+    def test_history_integration_and_purity(self):
+        """互动历史能够参与判断，且不修改原始状态。"""
+        state = {
+            "emotion": "calm",
+            "energy": 80,
+            "social_need": 20,
+        }
+        times = [1000, 1010, 1020]
+        original_state = state.copy()
+        original_times = times.copy()
+
+        recent_count = count_recent_interactions(
+            times, 1030
+        )
+
+        self.assertEqual(recent_count, 3)
+        self.assertEqual(
+            decide_tendency_with_frequency(
+                state, recent_count
+            ),
+            "affectionate"
+        )
+        self.assertEqual(state, original_state)
+        self.assertEqual(times, original_times)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
