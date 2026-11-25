@@ -15,6 +15,7 @@ from core.action_executor import execute_action
 from core.state_store import StateStore
 from core.companion_request import CompanionRequestTracker
 from core.companion_session import CompanionSession
+from core.interaction_tendency import decide_interaction_tendency
 
 
 # ==========================================
@@ -804,6 +805,91 @@ class TestCompanionSession(unittest.TestCase):
             "speech"
         )
         self.assertEqual(state["interaction_count"], 2)
+
+
+
+class TestInteractionTendency(unittest.TestCase):
+    """v0.5 互动倾向判断单元测试。"""
+
+    def test_all_tendencies_and_boundaries(self):
+        """验证五种倾向及关键阈值。"""
+        cases = [
+            ("sad", 80, 20, "gentle"),
+            ("sad", 10, 90, "gentle"),
+            ("happy", 20, 90, "tired"),
+            ("happy", 80, 90, "playful"),
+            ("happy", 60, 20, "playful"),
+            ("calm", 80, 90, "affectionate"),
+            ("calm", 80, 70, "affectionate"),
+            ("calm", 80, 69, "neutral"),
+            ("happy", 40, 20, "neutral"),
+            ("calm", 30, 20, "neutral"),
+        ]
+
+        for emotion, energy, social, expected in cases:
+            with self.subTest(
+                emotion=emotion,
+                energy=energy,
+                social_need=social
+            ):
+                state = {
+                    "emotion": emotion,
+                    "energy": energy,
+                    "social_need": social
+                }
+                self.assertEqual(
+                    decide_interaction_tendency(state),
+                    expected
+                )
+
+    def test_sad_has_highest_priority(self):
+        """伤心优先于疲倦及社交需求。"""
+        state = {
+            "emotion": "sad",
+            "energy": 10,
+            "social_need": 95
+        }
+        self.assertEqual(
+            decide_interaction_tendency(state),
+            "gentle"
+        )
+
+    def test_tired_overrides_affectionate(self):
+        """低精力优先于亲昵倾向。"""
+        state = {
+            "emotion": "calm",
+            "energy": 29,
+            "social_need": 90
+        }
+        self.assertEqual(
+            decide_interaction_tendency(state),
+            "tired"
+        )
+
+    def test_playful_overrides_affectionate(self):
+        """开心且精力充足时优先活泼。"""
+        state = {
+            "emotion": "happy",
+            "energy": 60,
+            "social_need": 90
+        }
+        self.assertEqual(
+            decide_interaction_tendency(state),
+            "playful"
+        )
+
+    def test_does_not_modify_input(self):
+        """纯函数不应改变传入的状态。"""
+        state = {
+            "emotion": "happy",
+            "energy": 80,
+            "social_need": 90
+        }
+        before = state.copy()
+
+        decide_interaction_tendency(state)
+
+        self.assertEqual(state, before)
 
 
 if __name__ == "__main__":
