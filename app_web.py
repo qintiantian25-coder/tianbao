@@ -62,6 +62,10 @@ _autonomy_lock = threading.Lock()
 
 DEFAULT_AUTONOMY_INTERVAL = 10.0
 
+# 无线充电座每次前端充电脉冲恢复的精力值. 由前端在停靠后每 ~2 秒调用一次;
+# 服务端只负责真实的精力增减, 不保存充电位置.
+CHARGE_ENERGY_PER_TICK = 3.0
+
 # 自主行为事件缓冲区：只保存展示文案，不保存对话、录音或状态细节.
 autonomy_events = AutonomyEventBuffer(capacity=100)
 
@@ -283,6 +287,34 @@ def sad_event_api():
             "title": title,
             "message": message,
         },
+    })
+
+
+# =========================
+# 6b. 无线充电座
+# =========================
+
+@app.post("/api/charge")
+def charge_tick():
+    """一次无线充电脉冲：提升真实精力，满了以后不再超过 100。
+
+    充电位置/归位流程由前端 2D/3D 场景负责；本接口只处理精力。
+    与自主决策共用同一把锁，避免和摸头/后台行为同时改状态时产生歧义.
+    """
+    with _autonomy_lock:
+        before = store.get_state()
+        if before["energy"] >= 100:
+            after = before
+            charged = 0.0
+        else:
+            after = store.apply_energy_recovery(CHARGE_ENERGY_PER_TICK)
+            charged = max(0.0, after["energy"] - before["energy"])
+
+    return jsonify({
+        "state": after,
+        "charged": round(charged, 2),
+        "full": after["energy"] >= 100,
+        "rate": CHARGE_ENERGY_PER_TICK,
     })
 
 

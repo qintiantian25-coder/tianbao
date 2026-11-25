@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-skin-accessory="antenna">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#f8f6f0">
-  <meta name="description" content="tianbao virtual V0.6 - 一个有情绪、会回应触摸、能用多种音色说话的小小陪伴机器人.">
-  <title>tianbao virtual V0.6 | Interactive Companion</title>
+  <meta name="description" content="tianbao virtual V0.7 - 有情绪、会换肤、住在 200㎡ 大平层里的小小陪伴机器人.">
+  <title>tianbao virtual V0.7 | Home &amp; Skins</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2363b3a1'/%3E%3Ctext x='32' y='45' font-size='36' text-anchor='middle' fill='%23eefcf6'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/style.css?v=0.6.5">
-  <script type="module" src="/static/app.js?v=0.6.12"></script>
+  <link rel="stylesheet" href="/static/style.css?v=0.7.1">
+  <script type="module" src="/static/app.js?v=0.7.1"></script>
 </head>
 <body>
   <div class="backdrop" aria-hidden="true">
@@ -18,23 +18,31 @@
   </div>
 
   <div class="app" id="appRoot">
-    <h1 class="visually-hidden">tianbao virtual - 小小陪伴机器人</h1>
+    <h1 class="visually-hidden">tianbao virtual - 会换肤、住在大平层里的小小陪伴机器人</h1>
     <header class="topbar">
-      <div class="brand" aria-label="tianbao virtual V0.6">
+      <div class="brand" aria-label="tianbao virtual V0.7">
         <span class="brand-mark" aria-hidden="true">✦</span>
         <span class="brand-name">tianbao</span>
         <span class="brand-tag">virtual</span>
-        <span class="brand-version">V0.6</span>
+        <span class="brand-version">V0.7</span>
       </div>
       <nav class="view-switch" role="tablist" aria-label="视图模式">
         <button class="view-tab is-active" type="button" role="tab" data-view="robot" aria-selected="true">机器人</button>
         <button class="view-tab" type="button" role="tab" data-view="iso" aria-selected="false">2.5D</button>
-        <button class="view-tab" type="button" role="tab" data-view="3d" aria-selected="false">3D <span class="view-tag">设计</span></button>
+        <button class="view-tab" type="button" role="tab" data-view="3d" aria-selected="false">3D 大平层 <span class="view-tag">200㎡</span></button>
       </nav>
       <div class="topbar-actions">
         <span id="offlineChip" class="offline-chip" hidden>后端离线</span>
+        <button id="skinOpen" class="skin-toggle" type="button"
+                aria-label="打开换肤面板" aria-haspopup="dialog" aria-controls="skinPanel" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true" class="skin-toggle-icon">
+            <path d="M12 3a9 9 0 0 0 0 18h1.15c1.48 0 2.4-1.58 1.67-2.84l-.28-.48c-.46-.8.1-1.82 1.03-1.82h1.5A4.93 4.93 0 0 0 22 10.93 8.98 8.98 0 0 0 12 3Zm-4.7 9.1a1.55 1.55 0 1 1 0-3.1 1.55 1.55 0 0 1 0 3.1Zm3.1-4.45a1.55 1.55 0 1 1 0-3.1 1.55 1.55 0 0 1 0 3.1Zm4.4.35a1.55 1.55 0 1 1 0-3.1 1.55 1.55 0 0 1 0 3.1Zm3.15 3.4a1.55 1.55 0 1 1 0-3.1 1.55 1.55 0 0 1 0 3.1Z"/>
+          </svg>
+          <span class="skin-toggle-text">换肤</span>
+          <span id="skinCurrentName" class="skin-toggle-name">薄荷号</span>
+        </button>
         <button id="debugOpen" class="debug-toggle" type="button"
-                aria-haspopup="dialog" aria-controls="debugPanel" aria-expanded="false">
+                aria-label="打开控制台" aria-haspopup="dialog" aria-controls="debugPanel" aria-expanded="false">
           <svg class="gear-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Zm8.2 4.6c0 .5-.1 1-.2 1.5l2 1.5-2 3.4-2.3-.9c-.8.6-1.7 1.1-2.6 1.4l-.3 2.4h-4l-.3-2.4c-1-.3-1.9-.8-2.6-1.4l-2.3.9-2-3.4 2-1.5c-.1-.5-.2-1-.2-1.5s.1-1 .2-1.5l-2-1.5 2-3.4 2.3.9c.8-.6 1.7-1.1 2.6-1.4l.3-2.4h4l.3 2.4c1 .3 1.9.8 2.6 1.4l2.3-.9 2 3.4-2 1.5c.1.5.2 1 .2 1.5Z"/>
           </svg>
@@ -43,6 +51,40 @@
         </button>
       </div>
     </header>
+
+    <section id="skinPanel" class="skin-panel" role="dialog" aria-modal="false"
+             aria-labelledby="skinTitle" aria-hidden="true" inert hidden>
+      <header class="skin-panel-header">
+        <div>
+          <div class="eyebrow">SKIN ATELIER · 24 形象 / 10 涂装</div>
+          <h2 id="skinTitle">给 tianbao 换一身</h2>
+          <p class="skin-panel-lead">AI 灵感与机器人伙伴均为原创演绎，不代表任何官方角色。</p>
+        </div>
+        <button id="skinClose" class="skin-close" type="button" aria-label="收起换肤面板">
+          <span>收起</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+      <nav class="skin-tabs" role="tablist" aria-label="换肤分类">
+        <button class="skin-tab is-active" type="button" role="tab" data-skin-tab="ai"
+                aria-selected="true" aria-controls="skinGrid">AI 形象 <b>12</b></button>
+        <button class="skin-tab" type="button" role="tab" data-skin-tab="robot"
+                aria-selected="false" aria-controls="skinGrid">机器人 <b>12</b></button>
+        <button class="skin-tab" type="button" role="tab" data-skin-tab="finish"
+                aria-selected="false" aria-controls="skinFinishPane">涂装 <b>10</b></button>
+      </nav>
+      <p id="skinGroupHint" class="skin-group-hint">原创演绎形象 · 选择后会立即同步 2D / 2.5D / 3D。</p>
+      <div class="skin-panel-body">
+        <div id="skinGrid" class="skin-grid" role="listbox" aria-label="形象选择"></div>
+        <div id="skinFinishPane" class="skin-finish-pane" hidden>
+          <div id="skinFinishGrid" class="skin-finish-grid" role="listbox" aria-label="涂装选择"></div>
+        </div>
+      </div>
+      <footer class="skin-panel-footer">
+        <span id="skinActiveLabel" class="skin-active-label">当前：薄荷号 · 原色留白</span>
+        <button id="skinReset" class="skin-reset" type="button">恢复默认</button>
+      </footer>
+    </section>
 
     <main class="scene" id="sceneRoot">
       <div id="debugHud" class="debug-hud" hidden aria-live="polite">
@@ -99,22 +141,53 @@
 
           <g class="robot-floating" id="robotFloating">
             <g class="robot-body">
-              <rect x="47" y="154" width="54" height="92" rx="25" fill="#d7e8e9" transform="rotate(14 74 200)"/>
-              <rect x="259" y="154" width="54" height="92" rx="25" fill="#d7e8e9" transform="rotate(-14 286 200)"/>
               <path d="M109 233 C115 197 142 184 180 184 C218 184 245 197 251 233 L258 278 C260 294 247 306 229 306 H131 C113 306 100 294 102 278 Z" fill="url(#bodyGradient)" stroke="#b7d5d9" stroke-width="3"/>
               <rect x="140" y="228" width="80" height="54" rx="22" fill="#ecf7f6"/>
               <circle cx="180" cy="253" r="13" fill="#9dd9d1"/>
               <path d="M174 253 L179 258 L188 247" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-              <rect x="93" y="233" width="35" height="15" rx="8" fill="#d4e5e5" transform="rotate(15 110 240)"/>
-              <rect x="232" y="233" width="35" height="15" rx="8" fill="#d4e5e5" transform="rotate(-15 248 240)"/>
             </g>
 
             <g class="robot-head" id="robotHead">
               <g class="head-motion" id="headMotion">
                 <rect x="150" y="31" width="60" height="48" rx="26" fill="#cadfe0"/>
-                <rect x="174" y="13" width="12" height="39" rx="6" fill="#dce9e7"/>
-                <circle class="antenna-light" cx="180" cy="14" r="14" fill="#f6c77f"/>
-                <circle cx="175" cy="9" r="5" fill="#fff" opacity=".65"/>
+                <g class="antenna-base">
+                  <rect x="174" y="13" width="12" height="39" rx="6" fill="#dce9e7"/>
+                  <circle class="antenna-light" cx="180" cy="14" r="14" fill="#f6c77f"/>
+                  <circle cx="175" cy="9" r="5" fill="#fff" opacity=".65"/>
+                </g>
+
+                <g class="skin-accessory skin-accessory-back" data-accessory="halo" aria-hidden="true">
+                  <ellipse cx="180" cy="34" rx="86" ry="14" fill="none" stroke="var(--skin-accessory)" stroke-width="8" opacity=".9"/>
+                  <ellipse cx="180" cy="34" rx="58" ry="8" fill="none" stroke="var(--skin-accessory-deep)" stroke-width="2.5" opacity=".5"/>
+                  <path d="M292 22 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3 Z" fill="var(--skin-accessory)" opacity=".75"/>
+                </g>
+                <g class="skin-accessory skin-accessory-back" data-accessory="cat" aria-hidden="true">
+                  <path d="M82 72 L92 18 Q96 9 105 18 L137 60 Z" fill="var(--skin-head-b)" stroke="var(--skin-outline)" stroke-width="3" stroke-linejoin="round"/>
+                  <path d="M278 72 L268 18 Q264 9 255 18 L223 60 Z" fill="var(--skin-head-b)" stroke="var(--skin-outline)" stroke-width="3" stroke-linejoin="round"/>
+                  <path d="M95 53 L100 28 Q102 23 106 28 L120 53 Z" fill="var(--skin-blush)" opacity=".7"/>
+                  <path d="M265 53 L260 28 Q258 23 254 28 L240 53 Z" fill="var(--skin-blush)" opacity=".7"/>
+                </g>
+                <g class="skin-accessory skin-accessory-back" data-accessory="bunny" aria-hidden="true">
+                  <rect x="86" y="-18" width="34" height="104" rx="17" fill="var(--skin-head-b)" stroke="var(--skin-outline)" stroke-width="3" transform="rotate(-12 103 34)"/>
+                  <rect x="240" y="-18" width="34" height="104" rx="17" fill="var(--skin-head-b)" stroke="var(--skin-outline)" stroke-width="3" transform="rotate(12 257 34)"/>
+                  <rect x="95" y="-8" width="16" height="74" rx="8" fill="var(--skin-blush)" opacity=".58" transform="rotate(-12 103 34)"/>
+                  <rect x="249" y="-8" width="16" height="74" rx="8" fill="var(--skin-blush)" opacity=".58" transform="rotate(12 257 34)"/>
+                </g>
+                <g class="skin-accessory skin-accessory-back" data-accessory="horns" aria-hidden="true">
+                  <path d="M104 66 C76 50 66 24 80 7 C89 28 101 39 119 47 Z" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="2.5" stroke-linejoin="round"/>
+                  <path d="M256 66 C284 50 294 24 280 7 C271 28 259 39 241 47 Z" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="2.5" stroke-linejoin="round"/>
+                </g>
+                <g class="skin-accessory skin-accessory-back" data-accessory="twin" aria-hidden="true">
+                  <path d="M128 57 L118 8" stroke="var(--skin-accessory-deep)" stroke-width="7" stroke-linecap="round"/>
+                  <circle cx="117" cy="5" r="11" fill="var(--skin-accent)" stroke="var(--skin-outline)" stroke-width="2"/>
+                  <path d="M232 57 L242 8" stroke="var(--skin-accessory-deep)" stroke-width="7" stroke-linecap="round"/>
+                  <circle cx="243" cy="5" r="11" fill="var(--skin-accessory)" stroke="var(--skin-outline)" stroke-width="2"/>
+                </g>
+                <g class="skin-accessory skin-accessory-back" data-accessory="moon" aria-hidden="true">
+                  <path d="M291 64 A27 27 0 1 0 310 104 A21 21 0 1 1 291 64 Z" fill="var(--skin-accessory)" opacity=".92"/>
+                  <circle cx="277" cy="51" r="3.4" fill="var(--skin-accessory)" opacity=".75"/>
+                  <circle cx="316" cy="78" r="2.3" fill="var(--skin-accessory)" opacity=".55"/>
+                </g>
 
                 <rect class="head-glow" x="46" y="54" width="268" height="186" rx="76"
                       fill="none" stroke="#bff0f0" stroke-width="10"/>
@@ -285,6 +358,60 @@
                     <g transform="translate(268 101)"><path class="star star-b" d="M0 -5 L1.5 -1.5 L5 0 L1.5 1.5 L0 5 L-1.5 1.5 L-5 0 L-1.5 -1.5 Z" fill="#ffd9e2"/></g>
                   </g>
                 </g>
+
+                <g class="skin-accessory skin-accessory-front" data-accessory="headphones" aria-hidden="true">
+                  <path d="M42 154 C36 65 84 24 180 24 C276 24 324 65 318 154" fill="none" stroke="var(--skin-accessory)" stroke-width="15" stroke-linecap="round"/>
+                  <path d="M48 148 C44 73 88 34 180 34 C272 34 316 73 312 148" fill="none" stroke="var(--skin-accessory-deep)" stroke-width="4" stroke-linecap="round" opacity=".65"/>
+                  <rect x="29" y="119" width="30" height="66" rx="15" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="3"/>
+                  <rect x="301" y="119" width="30" height="66" rx="15" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="3"/>
+                  <circle cx="44" cy="152" r="7" fill="var(--skin-accent-soft)" opacity=".72"/>
+                  <circle cx="316" cy="152" r="7" fill="var(--skin-accent-soft)" opacity=".72"/>
+                </g>
+                <g class="skin-accessory skin-accessory-front" data-accessory="visor" aria-hidden="true">
+                  <rect x="54" y="70" width="252" height="154" rx="60" fill="var(--skin-accent)" opacity=".13"/>
+                  <rect x="54" y="70" width="252" height="154" rx="60" fill="none" stroke="var(--skin-accent)" stroke-width="4" opacity=".82"/>
+                  <path d="M91 92 C133 78 218 78 267 96" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity=".22"/>
+                  <circle cx="288" cy="177" r="6" fill="var(--skin-accent)" opacity=".85"/>
+                </g>
+                <g class="skin-accessory skin-accessory-front" data-accessory="cap" aria-hidden="true">
+                  <path d="M92 61 C93 24 126 6 180 6 C234 6 267 24 268 61 Z" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="3" stroke-linejoin="round"/>
+                  <rect x="72" y="57" width="216" height="17" rx="8.5" fill="var(--skin-accessory-deep)"/>
+                  <circle cx="180" cy="27" r="5" fill="var(--skin-accent-soft)" opacity=".85"/>
+                  <path d="M169 82 L191 82" stroke="var(--skin-accessory-deep)" stroke-width="3" opacity=".5"/>
+                </g>
+                <g class="skin-accessory skin-accessory-front" data-accessory="beret" aria-hidden="true">
+                  <ellipse cx="177" cy="48" rx="88" ry="31" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="3" transform="rotate(-7 177 48)"/>
+                  <path d="M98 55 C124 83 236 84 263 54 C239 70 126 74 98 55 Z" fill="var(--skin-accessory-deep)" opacity=".38"/>
+                  <path d="M179 20 C177 11 185 7 190 13 C195 19 187 25 179 20 Z" fill="var(--skin-accessory-deep)"/>
+                </g>
+                <g class="skin-accessory skin-accessory-front" data-accessory="crown" aria-hidden="true">
+                  <path d="M126 54 L126 24 L148 36 L162 9 L180 31 L198 9 L212 36 L234 24 L234 54 Z" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="3" stroke-linejoin="round"/>
+                  <circle cx="126" cy="24" r="4.2" fill="var(--skin-accent-soft)"/>
+                  <circle cx="162" cy="9" r="4.2" fill="var(--skin-accent-soft)"/>
+                  <circle cx="198" cy="9" r="4.2" fill="var(--skin-accent-soft)"/>
+                  <circle cx="234" cy="24" r="4.2" fill="var(--skin-accent-soft)"/>
+                  <circle cx="180" cy="42" r="5" fill="var(--skin-blush)"/>
+                </g>
+                <g class="skin-accessory skin-accessory-front" data-accessory="sprout" aria-hidden="true">
+                  <path d="M180 58 C178 35 183 22 197 12" fill="none" stroke="var(--skin-accessory-deep)" stroke-width="5" stroke-linecap="round"/>
+                  <path d="M195 16 C218 5 238 12 239 26 C224 37 207 32 195 16 Z" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="2" stroke-linejoin="round"/>
+                  <path d="M188 29 C169 15 151 22 150 36 C164 47 180 42 188 29 Z" fill="var(--skin-accessory)" opacity=".84"/>
+                </g>
+                <g class="skin-accessory skin-accessory-front" data-accessory="flower" aria-hidden="true">
+                  <path d="M283 65 C287 83 288 101 282 119" fill="none" stroke="var(--skin-accessory-deep)" stroke-width="4" stroke-linecap="round"/>
+                  <circle cx="282" cy="68" r="10" fill="var(--skin-accessory)"/>
+                  <circle cx="270" cy="78" r="10" fill="var(--skin-accessory)"/>
+                  <circle cx="294" cy="78" r="10" fill="var(--skin-accessory)"/>
+                  <circle cx="276" cy="92" r="10" fill="var(--skin-accessory)"/>
+                  <circle cx="289" cy="91" r="10" fill="var(--skin-accessory)"/>
+                  <circle cx="282" cy="80" r="7" fill="var(--skin-accent-soft)"/>
+                </g>
+                <g class="skin-accessory skin-accessory-front" data-accessory="glasses" aria-hidden="true">
+                  <rect x="99" y="120" width="62" height="35" rx="14" fill="none" stroke="var(--skin-accessory)" stroke-width="4"/>
+                  <rect x="199" y="120" width="62" height="35" rx="14" fill="none" stroke="var(--skin-accessory)" stroke-width="4"/>
+                  <path d="M161 133 Q180 125 199 133" fill="none" stroke="var(--skin-accessory)" stroke-width="4" stroke-linecap="round"/>
+                  <path d="M99 128 L83 121 M261 128 L277 121" fill="none" stroke="var(--skin-accessory)" stroke-width="3" stroke-linecap="round"/>
+                </g>
               </g>
             </g>
 
@@ -414,18 +541,31 @@
             <div class="iso-picture"><span></span></div>
             <div class="iso-shelf"><i></i><i></i><i></i><i></i></div>
             <div class="iso-clock"><i></i><b></b></div>
-            <div class="iso-console"><span class="console-vase"></span><span class="console-leaf"></span><span class="console-leaf two"></span></div>
+            <div class="iso-console" id="isoMediaConsole">
+              <span class="console-vase"></span><span class="console-leaf"></span><span class="console-leaf two"></span>
+              <span class="iso-record-player" aria-hidden="true"><i></i><b></b></span>
+              <span class="iso-music-notes" aria-hidden="true"><i>♪</i><i>♫</i><i>♪</i></span>
+            </div>
           </div>
           <div class="iso-floor">
             <div class="iso-floor-lines"></div>
             <div class="iso-rug"></div>
-            <div class="iso-sofa">
+            <div class="iso-sofa" id="isoSofa">
               <span class="sofa-back"></span><span class="sofa-seat"></span>
               <span class="sofa-arm sofa-arm-left"></span><span class="sofa-arm sofa-arm-right"></span>
+              <span class="iso-cozy-pillow" aria-hidden="true">♡</span>
             </div>
-            <div class="iso-table"><span></span></div>
-            <div class="iso-plant"><span class="pot"></span><span class="leaf leaf-a"></span><span class="leaf leaf-b"></span><span class="leaf leaf-c"></span></div>
-            <div class="iso-lamp"><span class="shade"></span><span class="stem"></span></div>
+            <div class="iso-table" id="isoTable"><span></span><b class="iso-teacup" aria-hidden="true"></b></div>
+            <div class="iso-plant" id="isoPlant">
+              <span class="pot"></span><span class="leaf leaf-a"></span><span class="leaf leaf-b"></span><span class="leaf leaf-c"></span>
+              <span class="iso-mist" aria-hidden="true"><i></i><i></i><i></i></span>
+            </div>
+            <div class="iso-lamp" id="isoLamp"><span class="shade"></span><span class="stem"></span><span class="iso-lamp-glow" aria-hidden="true"></span></div>
+            <div class="iso-charge-pad" id="isoChargePad" aria-hidden="true">
+              <span class="iso-charge-ring r1"></span><span class="iso-charge-ring r2"></span>
+              <span class="iso-charge-core">⚡</span>
+              <span class="iso-charge-pad-label">WIRELESS</span>
+            </div>
           </div>
           <div class="iso-light"></div>
           <span class="iso-dust dust-a"></span>
@@ -445,9 +585,39 @@
             <div class="iso-char-flip" id="charFlip">
               <div class="iso-char-bob">
                 <svg class="iso-char-svg" viewBox="0 0 160 200" aria-hidden="true">
-                  <rect x="77" y="12" width="6" height="30" rx="3" fill="#dce9e7"/>
-                  <circle cx="80" cy="11" r="9" fill="#f6c77f"/>
-                  <circle cx="77" cy="8" r="3" fill="#fff" opacity=".65"/>
+                  <g class="antenna-base">
+                    <rect x="77" y="12" width="6" height="30" rx="3" fill="#dce9e7"/>
+                    <circle cx="80" cy="11" r="9" fill="#f6c77f"/>
+                    <circle cx="77" cy="8" r="3" fill="#fff" opacity=".65"/>
+                  </g>
+
+                  <g class="mini-skin-accessory skin-accessory-back" data-accessory="halo">
+                    <ellipse cx="80" cy="7" rx="40" ry="6" fill="none" stroke="var(--skin-accessory)" stroke-width="4"/>
+                  </g>
+                  <g class="mini-skin-accessory skin-accessory-back" data-accessory="cat">
+                    <path d="M40 40 L45 14 Q48 9 53 15 L68 34 Z" fill="var(--skin-head-b)" stroke="var(--skin-outline)" stroke-width="2"/>
+                    <path d="M120 40 L115 14 Q112 9 107 15 L92 34 Z" fill="var(--skin-head-b)" stroke="var(--skin-outline)" stroke-width="2"/>
+                    <path d="M47 29 L49 18 L57 29 Z" fill="var(--skin-blush)" opacity=".7"/>
+                    <path d="M113 29 L111 18 L103 29 Z" fill="var(--skin-blush)" opacity=".7"/>
+                  </g>
+                  <g class="mini-skin-accessory skin-accessory-back" data-accessory="bunny">
+                    <rect x="46" y="-16" width="15" height="52" rx="7.5" fill="var(--skin-head-b)" stroke="var(--skin-outline)" stroke-width="2" transform="rotate(-10 53 18)"/>
+                    <rect x="99" y="-16" width="15" height="52" rx="7.5" fill="var(--skin-head-b)" stroke="var(--skin-outline)" stroke-width="2" transform="rotate(10 107 18)"/>
+                    <rect x="50" y="-9" width="7" height="36" rx="3.5" fill="var(--skin-blush)" opacity=".6" transform="rotate(-10 53 18)"/>
+                    <rect x="103" y="-9" width="7" height="36" rx="3.5" fill="var(--skin-blush)" opacity=".6" transform="rotate(10 107 18)"/>
+                  </g>
+                  <g class="mini-skin-accessory skin-accessory-back" data-accessory="horns">
+                    <path d="M55 34 C41 24 39 12 46 6 C49 17 54 22 63 26 Z" fill="var(--skin-accessory)"/>
+                    <path d="M105 34 C119 24 121 12 114 6 C111 17 106 22 97 26 Z" fill="var(--skin-accessory)"/>
+                  </g>
+                  <g class="mini-skin-accessory skin-accessory-back" data-accessory="twin">
+                    <path d="M55 32 L50 5 M105 32 L110 5" stroke="var(--skin-accessory-deep)" stroke-width="3.4" stroke-linecap="round"/>
+                    <circle cx="49" cy="5" r="5" fill="var(--skin-accent)"/><circle cx="111" cy="5" r="5" fill="var(--skin-accessory)"/>
+                  </g>
+                  <g class="mini-skin-accessory skin-accessory-back" data-accessory="moon">
+                    <path d="M128 26 A15 15 0 1 0 138 49 A11 11 0 1 1 128 26 Z" fill="var(--skin-accessory)"/>
+                  </g>
+
                   <g class="mini-leg mini-leg-l"><rect x="58" y="158" width="16" height="34" rx="8" fill="#d7e8e9"/></g>
                   <g class="mini-leg mini-leg-r"><rect x="86" y="158" width="16" height="34" rx="8" fill="#d7e8e9"/></g>
                   <path class="mini-body" d="M48 118 C48 110 56 106 80 106 C104 106 112 110 112 118 L116 160 C116 168 108 172 100 172 H60 C52 172 44 168 44 160 Z" fill="#eaf4f4" stroke="#b7d5d9" stroke-width="3"/>
@@ -507,6 +677,41 @@
                   <g class="mini-mouth" data-mini-mouth="w"><path d="M72 91 Q76 95 80 91 Q84 95 88 91" stroke="#a8eef0" stroke-width="3" stroke-linecap="round" fill="none"/></g>
                   <g class="mini-mouth" data-mini-mouth="wide"><ellipse cx="80" cy="91" rx="6" ry="3" fill="#a8eef0"/></g>
                   <g class="mini-mouth" data-mini-mouth="bliss"><path d="M74 90 Q80 97 86 90 Q80 93 74 90 Z" fill="#a8eef0"/></g>
+
+                  <g class="mini-skin-accessory skin-accessory-front" data-accessory="headphones">
+                    <path d="M19 88 C17 40 42 22 80 22 C118 22 143 40 141 88" fill="none" stroke="var(--skin-accessory)" stroke-width="7" stroke-linecap="round"/>
+                    <rect x="13" y="63" width="14" height="32" rx="7" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="2"/>
+                    <rect x="133" y="63" width="14" height="32" rx="7" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="2"/>
+                  </g>
+                  <g class="mini-skin-accessory skin-accessory-front" data-accessory="visor">
+                    <rect x="24" y="37" width="112" height="78" rx="26" fill="var(--skin-accent)" opacity=".14"/>
+                    <rect x="24" y="37" width="112" height="78" rx="26" fill="none" stroke="var(--skin-accent)" stroke-width="2.4"/>
+                  </g>
+                  <g class="mini-skin-accessory skin-accessory-front" data-accessory="cap">
+                    <path d="M40 32 C42 14 57 6 80 6 C103 6 118 14 120 32 Z" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="2"/>
+                    <rect x="33" y="29" width="94" height="9" rx="4.5" fill="var(--skin-accessory-deep)"/>
+                  </g>
+                  <g class="mini-skin-accessory skin-accessory-front" data-accessory="beret">
+                    <ellipse cx="79" cy="18" rx="39" ry="14" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="2" transform="rotate(-7 79 18)"/>
+                    <path d="M80 2 C80 -3 86 -4 87 1 C88 5 83 7 80 2 Z" fill="var(--skin-accessory-deep)"/>
+                  </g>
+                  <g class="mini-skin-accessory skin-accessory-front" data-accessory="crown">
+                    <path d="M59 18 L59 4 L69 9 L76 -2 L84 9 L94 4 L94 18 Z" fill="var(--skin-accessory)" stroke="var(--skin-accessory-deep)" stroke-width="2" stroke-linejoin="round"/>
+                  </g>
+                  <g class="mini-skin-accessory skin-accessory-front" data-accessory="sprout">
+                    <path d="M80 22 C78 11 82 4 91 0" fill="none" stroke="var(--skin-accessory-deep)" stroke-width="2.8"/>
+                    <path d="M90 2 C101 -4 111 0 112 8 C105 15 96 12 90 2 Z" fill="var(--skin-accessory)"/>
+                  </g>
+                  <g class="mini-skin-accessory skin-accessory-front" data-accessory="flower">
+                    <circle cx="132" cy="45" r="5" fill="var(--skin-accessory)"/><circle cx="126" cy="50" r="5" fill="var(--skin-accessory)"/>
+                    <circle cx="138" cy="50" r="5" fill="var(--skin-accessory)"/><circle cx="132" cy="55" r="5" fill="var(--skin-accessory)"/>
+                    <circle cx="132" cy="50" r="3.4" fill="var(--skin-accent-soft)"/>
+                  </g>
+                  <g class="mini-skin-accessory skin-accessory-front" data-accessory="glasses">
+                    <rect x="45" y="57" width="30" height="18" rx="7" fill="none" stroke="var(--skin-accessory)" stroke-width="2.2"/>
+                    <rect x="85" y="57" width="30" height="18" rx="7" fill="none" stroke="var(--skin-accessory)" stroke-width="2.2"/>
+                    <path d="M75 64 H85" stroke="var(--skin-accessory)" stroke-width="2.2"/>
+                  </g>
                 </svg>
               </div>
             </div>
@@ -514,7 +719,20 @@
           </div>
         </div>
 
-        <div class="iso-hint">WASD / 方向键移动 · 空格跳跃 · Shift 加速 · 按住 tianbao 摸摸它</div>
+        <div class="iso-charge-hud" id="isoChargeHud">
+          <span class="iso-charge-hud-bolt" aria-hidden="true">⚡</span>
+          <span id="isoChargeStatus" aria-live="polite">未在充电</span>
+        </div>
+
+        <div class="iso-nearby-prompt" id="isoNearbyPrompt" hidden>
+          <kbd class="iso-nearby-key">E</kbd>
+          <span class="iso-nearby-copy">
+            <strong id="isoNearbyText">和 tianbao 互动</strong>
+            <small>主动互动</small>
+          </span>
+        </div>
+
+        <div class="iso-hint">WASD / 方向键移动 · 空格跳跃 · Shift 加速 · 靠近家具后按 E 互动 · 靠近充电座会自动归位</div>
 
         <div class="iso-controls">
           <div class="iso-dpad" aria-label="移动方向">
@@ -537,74 +755,100 @@
         </div>
       </section>
 
-      <section class="design-3d" id="design3d" hidden aria-label="3D 家庭场景设计预览">
-        <div class="design-card">
-          <div class="eyebrow">3D HOME SCENE · DESIGN PREVIEW</div>
-          <h2>让 tianbao 住进你的家</h2>
-          <p class="design-lead">3D 模式目前只完成概念与导入流程设计, 尚未接入渲染引擎. 目标是先支持导入户型图, 再逐步过渡到真实房间.</p>
-          <svg class="floorplan" viewBox="0 0 560 300" role="img" aria-label="户型导入设计草图">
-            <defs>
-              <linearGradient id="planBg" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#f3f8f3"/><stop offset="100%" stop-color="#fbf5ed"/>
-              </linearGradient>
-            </defs>
-            <rect x="18" y="18" width="524" height="264" rx="18" fill="url(#planBg)" stroke="#d9e6df"/>
-            <g stroke="#dce8e2" stroke-width="1">
-              <path d="M18 108 H542 M18 198 H542 M146 18 V282 M286 18 V282 M418 18 V282"/>
-            </g>
-            <g fill="none" stroke="#7fae9f" stroke-width="3" stroke-linejoin="round">
-              <rect x="44" y="44" width="186" height="158" rx="6"/>
-              <rect x="230" y="44" width="176" height="100" rx="6"/>
-              <rect x="406" y="44" width="108" height="100" rx="6"/>
-              <rect x="230" y="144" width="284" height="104" rx="6"/>
-            </g>
-            <g fill="none" stroke="#e3b978" stroke-width="3">
-              <path d="M116 202 A24 24 0 0 1 140 178"/>
-              <path d="M300 144 A22 22 0 0 1 322 122"/>
-              <path d="M406 122 A20 20 0 0 1 426 102"/>
-            </g>
-            <g fill="#6a817b" font-size="13" font-weight="700" text-anchor="middle" font-family="inherit">
-              <text x="136" y="100">客厅</text>
-              <text x="318" y="94">卧室</text>
-              <text x="460" y="94">厨房</text>
-              <text x="372" y="200">走廊 / 餐厅</text>
-            </g>
-            <g>
-              <circle cx="338" cy="238" r="10" fill="#63b3a1"/>
-              <circle cx="338" cy="238" r="17" fill="none" stroke="#63b3a1" stroke-width="2" stroke-dasharray="3 4"/>
-              <path d="M338 238 C360 238 360 208 384 208" fill="none" stroke="#63b3a1" stroke-width="2.5" stroke-dasharray="5 5"/>
-            </g>
-            <text x="500" y="264" font-size="10" text-anchor="middle" fill="#a1b0aa">FLOOR PLAN / BLOCKOUT</text>
-          </svg>
-          <ol class="design-steps">
-            <li><b>01</b><span>导入户型图, 标定比例与朝向.</span></li>
-            <li><b>02</b><span>框选房间 / 门窗, 标记房间语义.</span></li>
-            <li><b>03</b><span>生成体块与家具, 规划 tianbao 的导航路径.</span></li>
-          </ol>
-          <p class="design-note">设计思路: 先做“户型图 → 体块”的通用管线, 真实扫描作为增强, 不作为第一版依赖.</p>
-
-          <div class="design-pet">
-            <div class="design-pet-copy">
-              <div class="eyebrow">3D INTERACTION PREVIEW</div>
-              <h3>摸摸 3D tianbao</h3>
-              <p>3D 场景尚未接入. 这里先预演“射线命中头部 → 摸头反馈”的交互: 按住按钮, 松手后会真实提交一次摸头.</p>
-              <button id="designPetButton" class="btn btn-primary" type="button">按住摸摸 3D tianbao</button>
-              <p id="designPetStatus" class="field-note">还没有摸摸.</p>
+      <section class="home-3d" id="design3d" hidden aria-label="tianbao 的 3D 大平层">
+        <div class="home3d-shell" id="home3dShell" data-mode="orbit">
+          <header class="home3d-toolbar">
+            <div class="home3d-heading">
+              <div class="eyebrow">TIANBAO HOME · LIVE BLOCKOUT</div>
+              <h2>横厅三室 · 200㎡ <span>大平层</span></h2>
+              <p>16.0 × 12.5 m · 3 卧 · 1 厨 · 2 卫 · 无线充电座</p>
             </div>
-            <div class="design-pet-avatar" id="designPetAvatar" data-pet="idle" data-mood="happy" aria-hidden="true">
-              <div class="design-head">
-                <span class="design-antenna"></span>
-                <span class="design-screen">
-                  <span class="design-eye left"></span>
-                  <span class="design-eye right"></span>
-                  <span class="design-mouth"></span>
-                  <span class="design-cheek left"></span>
-                  <span class="design-cheek right"></span>
-                </span>
+            <div class="home3d-mode-tabs" role="tablist" aria-label="3D 视图模式">
+              <button class="is-active" type="button" role="tab" data-home-mode="orbit" aria-selected="true">全屋</button>
+              <button type="button" role="tab" data-home-mode="follow" aria-selected="false">跟随</button>
+              <button type="button" role="tab" data-home-mode="camera" aria-selected="false">第一人称</button>
+            </div>
+            <div class="home3d-live-chip"><i aria-hidden="true"></i><span>WEBGL LIVE</span></div>
+          </header>
+
+          <div class="home3d-viewport" id="home3dViewport">
+            <canvas id="home3dCanvas" aria-label="可拖拽旋转的 tianbao 3D 大平层"></canvas>
+            <div class="home3d-loading" id="home3dLoading">
+              <span class="home3d-loader" aria-hidden="true"></span>
+              <strong>正在搭起 200㎡ 的家</strong>
+              <span>加载 Three.js 与房间体块...</span>
+            </div>
+            <div class="home3d-fallback" id="home3dFallback" hidden>
+              <span aria-hidden="true">▦</span>
+              <strong>当前浏览器没有可用的 WebGL</strong>
+              <p>2.5D 小屋和全部家具互动仍然可以正常使用。</p>
+            </div>
+
+            <div class="home3d-top-actions">
+              <button id="home3dPetButton" class="home3d-action-btn is-primary" type="button">
+                <span aria-hidden="true">♡</span> 按住摸摸 3D tianbao
+              </button>
+              <button id="home3dDockButton" class="home3d-action-btn" type="button">
+                <span aria-hidden="true">⚡</span> 回充
+              </button>
+            </div>
+
+            <div class="home3d-status-card">
+              <span class="eyebrow">TIANBAO POSITION</span>
+              <strong id="home3dRoomStatus">横厅 · 客厅</strong>
+              <span id="home3dRobotStatus">正在观察新家</span>
+            </div>
+
+            <div class="home3d-charge-card" id="home3dChargeCard">
+              <span class="home3d-charge-icon" aria-hidden="true">⚡</span>
+              <span class="home3d-charge-copy">
+                <b>无线充电座</b>
+                <small id="home3dChargeStatus" aria-live="polite">未在充电</small>
+              </span>
+              <span class="home3d-charge-bar" aria-hidden="true"><i id="home3dChargeBar"></i></span>
+            </div>
+
+            <div class="home3d-camera-overlay" id="home3dCameraOverlay" hidden>
+              <span class="cam-scanlines" aria-hidden="true"></span>
+              <span class="cam-vignette" aria-hidden="true"></span>
+              <span class="cam-corner tl" aria-hidden="true"></span>
+              <span class="cam-corner tr" aria-hidden="true"></span>
+              <span class="cam-corner bl" aria-hidden="true"></span>
+              <span class="cam-corner br" aria-hidden="true"></span>
+              <div class="cam-topbar">
+                <span class="cam-rec"><i aria-hidden="true"></i> REC</span>
+                <strong id="home3dCamName">TIANBAO EYE · 横厅</strong>
+                <span id="home3dCamTime">--:--:--</span>
               </div>
-              <div class="design-pet-hearts"><span>♥</span><span>♥</span><span>♥</span></div>
+              <span class="cam-crosshair" aria-hidden="true"></span>
+              <div class="cam-meta">
+                <span>SIM CAM · 3D RENDER</span>
+                <span id="home3dCamMeta">FIRST PERSON · 1080P</span>
+                <span>非真实摄像头</span>
+              </div>
+            </div>
+
+            <div class="home3d-hint" id="home3dHint">
+              <span aria-hidden="true">◉</span> WASD 移动 · 拖动旋转 / 环视 · 滚轮缩放 · 点击地面也可移动
             </div>
           </div>
+
+          <footer class="home3d-footer">
+            <div class="home3d-camera-presets home3d-keyboard-hint" id="home3dKeyboardHint" aria-label="3D 键盘操作">
+              <span class="home3d-presets-label">键盘</span>
+              <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+              <span class="home3d-key-meaning">移动</span>
+              <span class="home3d-key-sep" aria-hidden="true"></span>
+              <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd>
+              <span id="home3dKeyAction" class="home3d-key-meaning">环视</span>
+            </div>
+            <div class="home3d-footer-status">
+              <span class="home3d-status-led" aria-hidden="true"></span>
+              <span id="home3dFooterMode">全屋俯视</span>
+              <span class="home3d-footer-sep" aria-hidden="true"></span>
+              <span id="home3dFooterRoom">横厅 · 客厅</span>
+            </div>
+          </footer>
         </div>
       </section>
     </main>
@@ -866,26 +1110,56 @@ bash scripts/dev.sh logs         # 跟踪日志</code></pre>
           </div>
           <p id="moveStatus" class="level-label">x 50 · y 74 · 待机</p>
           <p class="field-note">WASD / 方向键移动 · Space 跳跃 · Shift 长按加速, 轻点冲刺. 2.5D 场景里也可以直接按住 tianbao 摸摸它.</p>
+          <button id="actionGoto3d" class="btn btn-secondary" type="button">查看 3D 大平层</button>
+        </section>
+
+        <section class="module-card">
+          <div class="module-heading"><span>2.5D 家具互动</span><span class="summary-hint">靠近 + E</span></div>
+          <p class="module-desc">走到沙发、落地灯、绿植、唱片机或茶几附近，屏幕下方会出现 <kbd>E</kbd> 提示；按 <kbd>E</kbd> 主动互动，不再用鼠标点击家具。</p>
+          <p id="isoNearbyDebug" class="level-label">附近交互：无</p>
+          <p id="furnitureStatus" class="level-label">还没有和小屋家具互动.</p>
+          <p class="field-note">充电座是例外：靠近后会自动接管归位并无线充电。</p>
+        </section>
+
+        <section class="module-card charge-card">
+          <div class="module-heading"><span>自动回充</span><span class="summary-hint">2D / 3D 通用</span></div>
+          <p class="module-desc">靠近充电座会接管移动、自动归位并进入无线充电；充满后可自己走出来。</p>
+          <div class="charge-state-row">
+            <span class="charge-state-bolt" aria-hidden="true">⚡</span>
+            <span id="debugChargeStatus" class="charge-state-copy">当前未在充电座旁.</span>
+            <strong id="debugChargeEnergy">--%</strong>
+          </div>
+          <div class="charge-actions">
+            <button id="debugReturnDock" class="btn btn-primary" type="button">立即回充</button>
+            <button id="debugLeaveDock" class="btn btn-ghost" type="button">离开充电座</button>
+          </div>
+          <label class="switch-row" for="autoReturnToggle">
+            <input id="autoReturnToggle" type="checkbox" checked>
+            <span class="switch-track" aria-hidden="true"><i></i></span>
+            <span>电量低于 25% 时自动回充</span>
+          </label>
+          <p class="field-note">充电通过真实接口 <code>/api/charge</code> 提升后端精力；不是只改显示数值。</p>
         </section>
 
         <section class="module-card camera-card">
-          <div class="module-heading"><span>摄像头画面</span><span class="summary-hint">后续接入</span></div>
-          <div class="camera-placeholder">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 7h3l2-2h6l2 2h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"/>
-              <circle cx="12" cy="13" r="4"/>
-            </svg>
-            <p>摄像头预览将在后续接入.</p>
+          <div class="module-heading"><span>仿真摄像头</span><span class="summary-hint">tianbao 第一视角</span></div>
+          <div class="camera-sim-preview" id="cameraSimPreview">
+            <span class="camera-sim-grid" aria-hidden="true"></span>
+            <span class="camera-sim-scan" aria-hidden="true"></span>
+            <span class="camera-sim-badge"><i aria-hidden="true"></i> SIM CAM</span>
+            <span class="camera-sim-reticle" aria-hidden="true"></span>
+            <span class="camera-sim-copy">FIRST PERSON · 可上下左右环视</span>
           </div>
-          <button id="cameraButton" class="btn btn-ghost" type="button" disabled>开启摄像头预览</button>
-          <p class="field-note">后续将在这里接入摄像头画面、远程移动和动作预设.</p>
+          <button id="cameraButton" class="btn btn-primary" type="button">打开 tianbao 第一视角</button>
+          <p id="cameraStatus" class="level-label">第一人称仿真画面，不会读取真实摄像头。</p>
+          <p class="field-note">打开后进入 tianbao 视角：WASD 移动，方向键或拖动画面上下左右环视；REC 画面为 3D 实时渲染。</p>
         </section>
       </div>
     </div>
 
     <footer class="debug-footer">
       <span>数据源: Flask / core/emotion.py</span>
-      <span>V0.6</span>
+      <span>V0.7 · HOME</span>
     </footer>
   </aside>
 

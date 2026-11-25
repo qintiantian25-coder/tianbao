@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import threading
 import time
@@ -61,14 +62,41 @@ for marker in (
     'id="autonomyCooldownReset"',
     'id="companionRequestStatus"',
     'id="companionSessionStatus"',
+    'id="skinOpen"',
+    'id="skinPanel"',
+    'id="home3dCanvas"',
+    'id="home3dCameraOverlay"',
+    'id="isoChargePad"',
+    'id="debugChargeStatus"',
+    'id="isoNearbyPrompt"',
+    'id="isoNearbyDebug"',
+    'data-skin-tab="ai"',
+    'data-skin-tab="robot"',
+    'data-skin-tab="finish"',
+    'id="home3dKeyboardHint"',
+    'id="home3dPetButton"',
+    'id="cameraButton"',
     'class="service-commands"',
     "服务台",
 ):
     assert marker in html, marker
 
+# The skin drawer must start collapsed (the default state is part of the UX).
+assert re.search(r'id="skinPanel"[^>]*\bhidden\b', html)
+
 styles = client.get("/static/style.css")
 assert styles.status_code == 200
-assert ".service-commands" in styles.get_data(as_text=True)
+styles_text = styles.get_data(as_text=True)
+for marker in (
+    ".service-commands",
+    ".skin-panel",
+    ".skin-card",
+    ".iso-charge-pad",
+    ".iso-nearby-prompt",
+    ".home3d-shell",
+    ".home3d-camera-overlay",
+):
+    assert marker in styles_text, marker
 
 script = client.get("/static/app.js")
 assert script.status_code == 200
@@ -84,7 +112,18 @@ assert "pendingAutonomyEvent" in script_text
 assert "AUTONOMY_EVENT_TTL_MS" in script_text
 assert 'appState.interaction.mode !== "idle"' in script_text
 assert "voiceResponseActive" in script_text
-assert "designPetActive" in script_text
+assert "applySkinTheme" in script_text
+assert "wireSkinPanel" in script_text
+assert "ALL_SKINS" in script_text
+assert "home3d.js?v=0.7.1" in script_text
+assert "open3DCamera" in script_text
+assert "runFurnitureAction" in script_text
+assert "pressEInteraction" in script_text
+assert "nearestIsoInteraction" in script_text
+assert '"KeyE"' in script_text
+assert "isoNearbyPrompt" in script_text
+assert "requestReturnDock" in script_text
+assert "/api/charge" in script_text
 assert "updateCompanionRequest" in script_text
 assert "request_accepted" in script_text
 assert "isInvitationStillRelevant" in script_text
@@ -98,6 +137,37 @@ assert "applyCompanionPollResults" in script_text
 assert "poll-guard.js" in script_text
 assert "currentEpoch: backendEpoch" in script_text
 assert "isInvitationStillRelevantPure" in script_text
+
+# 2b. V0.7 皮肤 / 3D / 充电静态资源可加载
+skins_js = client.get("/static/skins.js")
+assert skins_js.status_code == 200
+skins_text = skins_js.get_data(as_text=True)
+for marker in ("AI_SKINS", "ROBOT_SKINS", "FINISHES", "灵犀", "龙角机", "deepsea"):
+    assert marker in skins_text, marker
+
+layout_js = client.get("/static/home-layout.js")
+assert layout_js.status_code == 200
+layout_text = layout_js.get_data(as_text=True)
+for marker in ("横厅 · 客厅", "createNavigationGrid", "chargingStateFor", "charging"):
+    assert marker in layout_text, marker
+
+home3d_js = client.get("/static/home3d.js")
+assert home3d_js.status_code == 200
+home3d_text = home3d_js.get_data(as_text=True)
+assert "export class Home3D" in home3d_text
+assert "FIRST_PERSON_FOV" in home3d_text
+assert "FIRST PERSON" in home3d_text
+assert "KeyW" in home3d_text
+assert "eye.yaw" in home3d_text
+assert "TIANBAO EYE" in html
+assert "SIM CAM" in html
+furniture_js = client.get("/static/furniture-interactions.js")
+assert furniture_js.status_code == 200
+furniture_text = furniture_js.get_data(as_text=True)
+for marker in ("ISO_FURNITURE_INTERACTIONS", "nearestIsoInteraction", "按 E"):
+    assert marker in furniture_text, marker
+assert client.get("/static/vendor/three.module.min.js").status_code == 200
+assert client.get("/static/vendor/THREE-LICENSE.txt").status_code == 200
 
 # 3. 本机 GET 调试状态可用，而且不会触发行为
 status = client.get("/api/debug/autonomy")
@@ -849,5 +919,37 @@ next_touch = client.post(
 assert next_touch["request_accepted"] is False
 assert next_touch["companion_session"]["is_active"] is True
 assert next_touch["companion_session"]["interaction_count"] == 2
+
+# 38. 无线充电接口真实提升精力、封顶 100、不触发决策/事件
+reset_runtime()
+app_web.store.apply_energy_cost(60)  # 80 -> 20
+charge_before = app_web.store.get_state()
+charge_response = client.post("/api/charge")
+assert charge_response.status_code == 200
+charge_data = charge_response.get_json()
+assert charge_data["rate"] == app_web.CHARGE_ENERGY_PER_TICK
+assert charge_data["charged"] > 0
+assert charge_data["state"]["energy"] > charge_before["energy"]
+assert charge_data["full"] is False
+assert app_web.autonomy_scheduler.last_interact_at is None
+assert app_web.autonomy_events.latest_id == 0
+
+for _ in range(50):
+    final_charge = client.post("/api/charge").get_json()
+    if final_charge["full"]:
+        break
+assert final_charge["state"]["energy"] == 100
+assert final_charge["full"] is True
+full_again = client.post("/api/charge").get_json()
+assert full_again["state"]["energy"] == 100
+assert full_again["charged"] == 0
+assert full_again["full"] is True
+assert app_web.autonomy_scheduler.last_interact_at is None
+assert app_web.autonomy_events.latest_id == 0
+assert client.get("/api/charge").status_code == 405
+
+https_charge = serve_https.app.test_client().post("/api/charge")
+assert https_charge.status_code == 200
+assert https_charge.get_json()["state"]["energy"] == 100
 
 print("后端接口集成测试通过！")

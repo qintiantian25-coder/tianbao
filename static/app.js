@@ -1,20 +1,37 @@
 "use strict";
 
-import { RobotView, baseExpressionFor } from "./robot-view.js?v=0.6.2";
-import { TouchController, touchLevelFor, touchAmountFor } from "./robot-touch.js?v=0.6.2";
-import { SpeechBubble } from "./bubble.js?v=0.6.2";
-import { World25D } from "./world25d.js?v=0.6.2";
-import { VoiceController, VOICE_RESPONSE_TEXT } from "./voice.js?v=0.6.2";
-import { VoiceLibrary } from "./voice-library.js?v=0.6.2";
+import { RobotView, baseExpressionFor } from "./robot-view.js?v=0.7.1";
+import { TouchController } from "./robot-touch.js?v=0.7.1";
+import { SpeechBubble } from "./bubble.js?v=0.7.1";
+import { World25D } from "./world25d.js?v=0.7.1";
+import { VoiceController, VOICE_RESPONSE_TEXT } from "./voice.js?v=0.7.1";
+import { VoiceLibrary } from "./voice-library.js?v=0.7.1";
 import {
   RemoteTTSService,
   loadTTSSelection,
   saveTTSSelection,
-} from "./remote-tts.js?v=0.6.2";
+} from "./remote-tts.js?v=0.7.1";
 import {
   applyCompanionPollResults,
   isInvitationStillRelevant as isInvitationStillRelevantPure,
-} from "./poll-guard.js?v=0.6.12";
+} from "./poll-guard.js?v=0.7.1";
+import {
+  ALL_SKINS,
+  FINISHES,
+  SKIN_GROUPS,
+  DEFAULT_PERSONA_ID,
+  DEFAULT_FINISH_ID,
+  loadSkinSelection,
+  saveSkinSelection,
+  resolveSkinTheme,
+  skinCssVariables,
+  normalizeSkinSelection,
+} from "./skins.js?v=0.7.1";
+import { chargingStateFor } from "./home-layout.js?v=0.7.1";
+import {
+  nearestIsoInteraction,
+  nearbyInteractionLabel,
+} from "./furniture-interactions.js?v=0.7.1";
 
 /* ==========================================================================
    DOM
@@ -69,7 +86,6 @@ const companionSessionStatus = $("companionSessionStatus");
 const autonomyPresetButtons = [...document.querySelectorAll("[data-autonomy-preset]")];
 const stateGroup = document.querySelector(".state-group");
 
-const sceneRoot = $("sceneRoot");
 const viewTabs = [...document.querySelectorAll(".view-tab")];
 const debugHud = $("debugHud");
 const hudMood = $("hudMood");
@@ -82,7 +98,7 @@ const panelHudMode = $("panelHudMode");
 const panelHudParams = $("panelHudParams");
 
 const worldRoot = $("world25d");
-const designView = $("design3d");
+const home3dRoot = $("design3d");
 const charEntity = $("charEntity");
 const char25d = $("char25d");
 const charFlip = $("charFlip");
@@ -97,9 +113,37 @@ const panelBody = $("panelBody");
 const actionModeNote = $("actionModeNote");
 const actionGotoIso = $("actionGotoIso");
 const cameraButton = $("cameraButton");
-const designPetButton = $("designPetButton");
-const designPetAvatar = $("designPetAvatar");
-const designPetStatus = $("designPetStatus");
+const cameraStatus = $("cameraStatus");
+const cameraSimPreview = $("cameraSimPreview");
+const actionGoto3d = $("actionGoto3d");
+const furnitureStatus = $("furnitureStatus");
+const debugChargeStatus = $("debugChargeStatus");
+const debugChargeEnergy = $("debugChargeEnergy");
+const debugReturnDock = $("debugReturnDock");
+const debugLeaveDock = $("debugLeaveDock");
+const autoReturnToggle = $("autoReturnToggle");
+const isoChargeStatus = $("isoChargeStatus");
+const isoChargeHud = $("isoChargeHud");
+const isoNearbyPrompt = $("isoNearbyPrompt");
+const isoNearbyText = $("isoNearbyText");
+const isoNearbyDebug = $("isoNearbyDebug");
+const isoSofa = $("isoSofa");
+const isoLamp = $("isoLamp");
+const isoPlant = $("isoPlant");
+const isoMediaConsole = $("isoMediaConsole");
+const isoTable = $("isoTable");
+const isoChargePad = $("isoChargePad");
+const skinOpen = $("skinOpen");
+const skinClose = $("skinClose");
+const skinPanel = $("skinPanel");
+const skinCurrentName = $("skinCurrentName");
+const skinGrid = $("skinGrid");
+const skinFinishPane = $("skinFinishPane");
+const skinFinishGrid = $("skinFinishGrid");
+const skinTabs = [...document.querySelectorAll("[data-skin-tab]")];
+const skinGroupHint = $("skinGroupHint");
+const skinActiveLabel = $("skinActiveLabel");
+const skinReset = $("skinReset");
 
 const voiceDock = $("voiceDock");
 const voiceToggle = $("voiceToggle");
@@ -283,6 +327,66 @@ function idleInteraction() {
 }
 
 /* ==========================================================================
+   Skin selection
+   ========================================================================== */
+
+let skinSelection = loadSkinSelection();
+let currentSkinTheme = resolveSkinTheme(
+  skinSelection.personaId,
+  skinSelection.finishId,
+);
+let activeSkinTab = currentSkinTheme.category === "robot" ? "robot" : "ai";
+let skinPanelOpen = false;
+let skinPanelReturnFocus = null;
+let skinPanelCloseTimer = null;
+
+/* ==========================================================================
+   Charging / furniture scene state
+   ========================================================================== */
+
+const AUTO_RETURN_THRESHOLD = 25;
+const AUTO_RETURN_STORAGE_KEY = "tianbao.autoReturn.v1";
+const CHARGE_TICK_MS = 2000;
+
+const furnitureState = {
+  sofa: false,
+  lampOn: true,
+  plant: false,
+  media: false,
+  table: false,
+};
+let furnitureBubbleTimer = null;
+let teaTimer = null;
+
+function readAutoReturn() {
+  try {
+    const raw = localStorage.getItem(AUTO_RETURN_STORAGE_KEY);
+    return raw === null ? true : raw === "1";
+  } catch {
+    return true;
+  }
+}
+
+let autoReturnEnabled = readAutoReturn();
+let lowEnergyAutoReturnArmed = true;
+let chargeSession = {
+  active: false,
+  view: null,
+  timer: null,
+  inFlight: false,
+  full: false,
+};
+
+/* ==========================================================================
+   3D lazy loader
+   ========================================================================== */
+
+let home3d = null;
+let home3dPromise = null;
+let home3dFailed = false;
+let threeDPetActive = false;
+
+/* ==========================================================================
    View + bubble
    ========================================================================== */
 
@@ -310,12 +414,25 @@ const world = new World25D({
     }
     syncRunButtons(status.runToggle);
     updateHud();
+    updateChargeUI();
+    updateNearbyInteraction();
   },
+  onDockChange: (event) => handleDockChange("iso", event),
 });
 world.setFace(robot.currentEye || "open", robot.currentMouth || "smile");
 world.setExpression(appState.baseExpression);
-bubble.onUpdate = (update) => world.setBubble(update);
-robot.onFaceChange = ({ eye, mouth }) => world.setFace(eye, mouth);
+worldRoot.__world25d = world;
+bubble.onUpdate = (update) => {
+  if (furnitureBubbleTimer) {
+    clearTimeout(furnitureBubbleTimer);
+    furnitureBubbleTimer = null;
+  }
+  world.setBubble(update);
+};
+robot.onFaceChange = ({ eye, mouth }) => {
+  world.setFace(eye, mouth);
+  if (home3d) home3d.setFace(eye, mouth);
+};
 
 const voiceLibrary = new VoiceLibrary();
 const voice = new VoiceController({
@@ -456,6 +573,289 @@ function cancelSimulation({ hideBubble = true, keepTouch = false } = {}) {
 }
 
 /* ==========================================================================
+   Skin atelier
+   ========================================================================== */
+
+const AVATAR_VARIABLES = {
+  bodyA: "--avatar-body-a",
+  bodyB: "--avatar-body-b",
+  headA: "--avatar-head-a",
+  headB: "--avatar-head-b",
+  outline: "--avatar-outline",
+  screenA: "--avatar-screen-a",
+  screenB: "--avatar-screen-b",
+  face: "--avatar-face",
+  accent: "--avatar-accent",
+  accentSoft: "--avatar-accent-soft",
+  aura: "--avatar-aura",
+};
+
+function applyAvatarColors(element, colors) {
+  for (const [key, cssName] of Object.entries(AVATAR_VARIABLES)) {
+    if (colors && colors[key]) element.style.setProperty(cssName, colors[key]);
+  }
+}
+
+function createAvatar(skin, colors) {
+  const avatar = document.createElement("span");
+  avatar.className = "skin-avatar";
+  avatar.dataset.accessory = skin.accessory;
+  avatar.setAttribute("aria-hidden", "true");
+  applyAvatarColors(avatar, colors);
+
+  const head = document.createElement("span");
+  head.className = "av-head";
+  const screen = document.createElement("span");
+  screen.className = "av-screen";
+  const leftEye = document.createElement("i");
+  leftEye.className = "av-eye left";
+  const rightEye = document.createElement("i");
+  rightEye.className = "av-eye right";
+  const smile = document.createElement("i");
+  smile.className = "av-smile";
+  screen.append(leftEye, rightEye, smile);
+
+  const body = document.createElement("span");
+  body.className = "av-body";
+  const dot = document.createElement("span");
+  dot.className = "av-dot";
+  body.append(dot);
+
+  avatar.append(head, screen, body);
+  return avatar;
+}
+
+function createSkinCard(skin) {
+  const colors = resolveSkinTheme(skin.id, skinSelection.finishId).colors;
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "skin-card";
+  card.dataset.skinId = skin.id;
+  card.setAttribute("role", "option");
+  card.setAttribute("aria-selected", String(skin.id === skinSelection.personaId));
+  card.setAttribute("aria-label", `${skin.name}，${skin.subtitle}`);
+  if (skin.id === skinSelection.personaId) card.classList.add("is-active");
+
+  const name = document.createElement("span");
+  name.className = "skin-card-name";
+  name.textContent = skin.name;
+  const badge = document.createElement("b");
+  badge.textContent = skin.badge;
+  name.append(badge);
+
+  const subtitle = document.createElement("span");
+  subtitle.className = "skin-card-sub";
+  subtitle.textContent = skin.subtitle;
+
+  card.append(createAvatar(skin, colors), name, subtitle);
+  card.addEventListener("click", () => {
+    skinSelection = normalizeSkinSelection({
+      personaId: skin.id,
+      finishId: skinSelection.finishId,
+    });
+    applySkinTheme(
+      resolveSkinTheme(skinSelection.personaId, skinSelection.finishId),
+      { persist: true, announce: true },
+    );
+    const again = skinGrid?.querySelector(`[data-skin-id="${skin.id}"]`);
+    if (again) again.focus({ preventScroll: true });
+  });
+  return card;
+}
+
+function createFinishCard(finish) {
+  const theme = resolveSkinTheme(skinSelection.personaId, finish.id);
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "skin-finish-card";
+  card.dataset.finishId = finish.id;
+  card.setAttribute("role", "option");
+  card.setAttribute("aria-selected", String(finish.id === skinSelection.finishId));
+  card.setAttribute("aria-label", `${finish.name}，${finish.description}`);
+  if (finish.id === skinSelection.finishId) card.classList.add("is-active");
+
+  const swatch = document.createElement("span");
+  swatch.className = "finish-swatch";
+  for (const key of ["headA", "headB", "face", "accent", "screenA"]) {
+    const stripe = document.createElement("i");
+    stripe.style.background = theme.colors[key] || "#ded8cc";
+    swatch.append(stripe);
+  }
+  const name = document.createElement("span");
+  name.className = "skin-finish-name";
+  name.textContent = finish.name;
+  const desc = document.createElement("span");
+  desc.className = "skin-finish-desc";
+  desc.textContent = finish.description;
+  card.append(swatch, name, desc);
+
+  card.addEventListener("click", () => {
+    skinSelection = normalizeSkinSelection({
+      personaId: skinSelection.personaId,
+      finishId: finish.id,
+    });
+    applySkinTheme(
+      resolveSkinTheme(skinSelection.personaId, skinSelection.finishId),
+      { persist: true, announce: true },
+    );
+    const again = skinFinishGrid?.querySelector(`[data-finish-id="${finish.id}"]`);
+    if (again) again.focus({ preventScroll: true });
+  });
+  return card;
+}
+
+function updateSkinTabs() {
+  for (const tab of skinTabs) {
+    const active = tab.dataset.skinTab === activeSkinTab;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
+  }
+}
+
+function renderSkinPanel() {
+  if (!skinGrid || !skinFinishGrid || !currentSkinTheme) return;
+  updateSkinTabs();
+
+  const finishTab = activeSkinTab === "finish";
+  if (skinFinishPane) skinFinishPane.hidden = !finishTab;
+  if (skinGrid) skinGrid.hidden = finishTab;
+
+  if (finishTab) {
+    if (skinGroupHint) {
+      skinGroupHint.textContent = "涂装会套用在当前形象上；原色留白会保留角色自带配色。";
+    }
+    skinFinishGrid.replaceChildren(...FINISHES.map(createFinishCard));
+  } else {
+    const group = SKIN_GROUPS.find((item) => item.id === activeSkinTab);
+    if (skinGroupHint) {
+      skinGroupHint.textContent = group ? group.hint : "";
+    }
+    const skins = ALL_SKINS.filter((skin) => skin.category === activeSkinTab);
+    skinGrid.replaceChildren(...skins.map(createSkinCard));
+  }
+
+  if (skinCurrentName) skinCurrentName.textContent = currentSkinTheme.name;
+  if (skinActiveLabel) {
+    skinActiveLabel.textContent =
+      `当前：${currentSkinTheme.name} · ${currentSkinTheme.finishName} · ${currentSkinTheme.subtitle}`;
+  }
+}
+
+function applySkinTheme(theme, { persist = true, announce = false } = {}) {
+  currentSkinTheme = theme;
+  skinSelection = normalizeSkinSelection({
+    personaId: theme.personaId,
+    finishId: theme.finishId,
+  });
+  if (persist) saveSkinSelection(skinSelection);
+
+  const root = document.documentElement;
+  const variables = skinCssVariables(theme.colors);
+  for (const [name, value] of Object.entries(variables)) {
+    root.style.setProperty(name, value);
+  }
+  root.dataset.skinAccessory = theme.accessory;
+  root.dataset.skinPersona = theme.personaId;
+  root.dataset.skinCategory = theme.category;
+
+  if (home3d) home3d.applyTheme(theme);
+  updateSkinTabs();
+  renderSkinPanel();
+  if (announce) {
+    updateLastEvent(`换肤 · ${theme.name} · ${theme.finishName}`);
+  }
+}
+
+function setSkinTab(tab, { focus = false } = {}) {
+  if (!["ai", "robot", "finish"].includes(tab)) return;
+  activeSkinTab = tab;
+  renderSkinPanel();
+  if (focus) {
+    const target = skinTabs.find((button) => button.dataset.skinTab === tab);
+    if (target) target.focus({ preventScroll: true });
+  }
+}
+
+function openSkinPanel() {
+  if (!skinPanel || skinPanelOpen) return;
+  if (panelOpen) closePanel();
+  skinPanelOpen = true;
+  skinPanelReturnFocus = document.activeElement;
+  if (skinPanelCloseTimer) {
+    clearTimeout(skinPanelCloseTimer);
+    skinPanelCloseTimer = null;
+  }
+  activeSkinTab = currentSkinTheme.category === "robot" ? "robot" : "ai";
+  renderSkinPanel();
+  skinPanel.hidden = false;
+  skinPanel.inert = false;
+  skinPanel.setAttribute("aria-hidden", "false");
+  if (skinOpen) skinOpen.setAttribute("aria-expanded", "true");
+  document.body.classList.add("skin-open");
+  window.requestAnimationFrame(() => skinPanel.classList.add("is-open"));
+  window.setTimeout(() => skinClose?.focus({ preventScroll: true }), 40);
+}
+
+function closeSkinPanel({ restoreFocus = true } = {}) {
+  if (!skinPanel || !skinPanelOpen) return;
+  skinPanelOpen = false;
+  skinPanel.classList.remove("is-open");
+  skinPanel.setAttribute("aria-hidden", "true");
+  if (skinOpen) skinOpen.setAttribute("aria-expanded", "false");
+  document.body.classList.remove("skin-open");
+  skinPanelCloseTimer = window.setTimeout(() => {
+    if (skinPanelOpen) return;
+    skinPanel.hidden = true;
+    skinPanel.inert = true;
+    skinPanelCloseTimer = null;
+  }, 200);
+  if (restoreFocus) {
+    const target = skinPanelReturnFocus && typeof skinPanelReturnFocus.focus === "function"
+      ? skinPanelReturnFocus
+      : skinOpen;
+    target?.focus({ preventScroll: true });
+  }
+}
+
+function wireSkinPanel() {
+  if (!skinOpen || !skinPanel) return;
+  skinOpen.addEventListener("click", () => {
+    if (skinPanelOpen) closeSkinPanel();
+    else openSkinPanel();
+  });
+  skinClose?.addEventListener("click", () => closeSkinPanel());
+  skinReset?.addEventListener("click", () => {
+    skinSelection = normalizeSkinSelection({
+      personaId: DEFAULT_PERSONA_ID,
+      finishId: DEFAULT_FINISH_ID,
+    });
+    applySkinTheme(
+      resolveSkinTheme(DEFAULT_PERSONA_ID, DEFAULT_FINISH_ID),
+      { persist: true, announce: true },
+    );
+    setSkinTab("robot");
+  });
+  for (const tab of skinTabs) {
+    tab.addEventListener("click", () => setSkinTab(tab.dataset.skinTab));
+    tab.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      const index = skinTabs.indexOf(tab);
+      const next = event.key === "ArrowRight"
+        ? (index + 1) % skinTabs.length
+        : (index - 1 + skinTabs.length) % skinTabs.length;
+      setSkinTab(skinTabs[next].dataset.skinTab, { focus: true });
+    });
+  }
+  document.addEventListener("pointerdown", (event) => {
+    if (!skinPanelOpen) return;
+    if (skinPanel.contains(event.target) || skinOpen.contains(event.target)) return;
+    closeSkinPanel({ restoreFocus: false });
+  });
+}
+
+/* ==========================================================================
    Touch (real pointer holding + keyboard + debug preview)
    ========================================================================== */
 
@@ -538,57 +938,7 @@ new TouchController({
   onTouchCancel: () => cancelTouch("iso"),
 });
 
-/* 3D design preview: hold-to-pet prototype using the same touch state machine. */
-let designPetActive = false;
-let designPetStart = 0;
-let designPetPointerAt = 0;
-let designPetTimers = [];
-
-function setDesignPetFace(pet) {
-  if (designPetAvatar) designPetAvatar.dataset.pet = pet;
-}
-
-function startDesignPet() {
-  if (designPetActive) return;
-  designPetActive = true;
-  designPetStart = performance.now();
-  beginTouch("light", "design");
-  setDesignPetFace("light");
-  if (designPetStatus) designPetStatus.textContent = "摸摸中... 继续按住会更亲昵.";
-  designPetTimers = [
-    window.setTimeout(() => {
-      if (!designPetActive) return;
-      changeTouchLevel("medium");
-      setDesignPetFace("medium");
-      if (designPetStatus) designPetStatus.textContent = "tianbao 正在享受摸摸...";
-    }, 500),
-    window.setTimeout(() => {
-      if (!designPetActive) return;
-      changeTouchLevel("affectionate");
-      setDesignPetFace("affectionate");
-      if (designPetStatus) designPetStatus.textContent = "tianbao 被摸得很开心...";
-    }, 1500),
-  ];
-}
-
-function endDesignPet(send) {
-  if (!designPetActive) return;
-  const elapsed = performance.now() - designPetStart;
-  const level = touchLevelFor(elapsed);
-  const amount = touchAmountFor(elapsed);
-  designPetActive = false;
-  for (const timer of designPetTimers) clearTimeout(timer);
-  designPetTimers = [];
-  setDesignPetFace("idle");
-
-  if (send) {
-    if (designPetStatus) designPetStatus.textContent = "摸摸已送出, 等 tianbao 的回应...";
-    finishTouch({ amount, level, source: "design" });
-  } else {
-    if (designPetStatus) designPetStatus.textContent = "这次摸头被取消了.";
-    cancelTouch("design");
-  }
-}
+/* 3D petting is wired by the lazy Home3D instance below. */
 
 let touchQueue = Promise.resolve();
 
@@ -745,6 +1095,9 @@ function applyBackendState(data) {
   }
 
   updateDebugState();
+  if (home3d) home3d.setEnergy(energyValue());
+  updateChargeUI();
+  maybeAutoReturnCharging();
   return true;
 }
 
@@ -905,8 +1258,6 @@ async function sendTouch(amount, meta = {}) {
       }
 
       updateLastEvent(`主人回应了${label}请求${request.id ? ` #${request.id}` : ""}`);
-      if (designPetStatus) designPetStatus.textContent = text;
-
       if (appState.interaction.mode !== "speaking"
           && appState.interaction.mode !== "listening") {
         bubble.type({
@@ -977,8 +1328,6 @@ async function sendSadEvent(amount) {
 function showServerEvent(event) {
   if (!event || !event.message) return;
   updateLastEvent(`${event.title || "事件"} · ${event.message}`);
-  if (designPetStatus) designPetStatus.textContent = event.message;
-
   // Never stomp on a running typed simulation bubble.
   if (appState.interaction.mode === "speaking" || appState.interaction.mode === "listening") {
     return;
@@ -1297,7 +1646,7 @@ function autonomyInteractionBusy() {
   if (actionDepth > 0) return true;
   if (autonomyInFlight) return true;
   if (simTimer) return true;
-  if (designPetActive) return true;
+  if (threeDPetActive) return true;
   if (voiceResponseActive) return true;
   if (voice.isRecording || voice.isPlaying) return true;
 
@@ -1634,12 +1983,6 @@ function interactionText() {
 
 function updateDebugMode() {
   dbgMode.textContent = interactionText();
-  if (designPetAvatar) {
-    const base = appState.baseExpression;
-    designPetAvatar.dataset.mood = base.startsWith("sad")
-      ? "sad"
-      : base === "calm" ? "calm" : "happy";
-  }
   updateHud();
 }
 
@@ -1684,20 +2027,525 @@ function updateLastEvent(text) {
 }
 
 /* ==========================================================================
-   Views: robot / 2.5D room / 3D design preview
+   Furniture interactions + charging (2D / 3D shared)
+   ========================================================================== */
+
+function setFurnitureStatus(text, { announce = true } = {}) {
+  if (furnitureStatus) furnitureStatus.textContent = text;
+  if (announce) updateLastEvent(text);
+}
+
+function applyFurnitureVisuals() {
+  worldRoot.classList.toggle("is-cozy", furnitureState.sofa);
+  isoSofa?.classList.toggle("is-cozy", furnitureState.sofa);
+  worldRoot.classList.toggle("is-lamp-off", !furnitureState.lampOn);
+  isoLamp?.classList.toggle("is-off", !furnitureState.lampOn);
+  isoMediaConsole?.classList.toggle("is-music-on", furnitureState.media);
+}
+
+function isTypingTarget(target) {
+  return target instanceof Element
+    && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
+
+function updateNearbyInteraction() {
+  let next = null;
+  if (appState.view === "iso" && world.active) {
+    const dock = world.getDockState();
+    if (!dock.docked && !dock.docking) {
+      next = nearestIsoInteraction(appState.move.x, appState.move.y);
+    }
+  }
+  if (isoNearbyPrompt) {
+    isoNearbyPrompt.hidden = !next;
+    if (next && isoNearbyText) isoNearbyText.textContent = next.prompt;
+  }
+  if (isoNearbyDebug) isoNearbyDebug.textContent = nearbyInteractionLabel(next);
+  worldRoot.classList.toggle("has-nearby-interaction", Boolean(next));
+  return next;
+}
+
+function pressEInteraction() {
+  if (appState.view !== "iso" || skinPanelOpen || panelOpen) return false;
+  if (appState.interaction.mode !== "idle") return false;
+  const nearby = updateNearbyInteraction();
+  if (!nearby) {
+    setFurnitureStatus("附近没有可互动的家具，再走近一点试试.", { announce: false });
+    return false;
+  }
+  runFurnitureAction(nearby.id, { fromKeyboard: true });
+  return true;
+}
+
+function showIsoFurnitureBubble(text, label = "tianbao", autoHideMs = 4200) {
+  if (!worldRoot || worldRoot.hidden) return;
+  if (appState.interaction.mode === "speaking" || appState.interaction.mode === "listening") {
+    return;
+  }
+  if (furnitureBubbleTimer) clearTimeout(furnitureBubbleTimer);
+  world.setBubble({ label, text, visible: true });
+  furnitureBubbleTimer = window.setTimeout(() => {
+    furnitureBubbleTimer = null;
+    world.setBubble({ label: "", text: "", visible: false });
+  }, autoHideMs);
+}
+
+function runFurnitureAction(action, { fromKeyboard = true } = {}) {
+  const valid = new Set(["sofa", "lamp", "plant", "media", "table", "charger"]);
+  if (!valid.has(action)) return;
+
+  if (action === "charger") {
+    requestReturnDock("interaction");
+    setFurnitureStatus("已请求无线充电座接管移动.");
+    return;
+  }
+
+  if (appState.view !== "iso") {
+    setView("iso");
+  }
+  if (teaTimer && action === "table") {
+    clearTimeout(teaTimer);
+    teaTimer = null;
+  }
+
+  if (action === "sofa") {
+    furnitureState.sofa = !furnitureState.sofa;
+    applyFurnitureVisuals();
+    setFurnitureStatus(furnitureState.sofa ? "沙发互动：暖灯和软垫准备好了." : "沙发互动已收起.");
+    showIsoFurnitureBubble(
+      furnitureState.sofa
+        ? "沙发软乎乎的，我们一起窝一会儿吧~"
+        : "沙发先给你留着，想坐的时候再叫我。",
+    );
+  } else if (action === "lamp") {
+    furnitureState.lampOn = !furnitureState.lampOn;
+    applyFurnitureVisuals();
+    setFurnitureStatus(`落地灯已${furnitureState.lampOn ? "打开" : "关闭"}.`);
+    showIsoFurnitureBubble(
+      furnitureState.lampOn ? "灯亮啦，屋里又暖回来了~" : "把灯关小一点，晚上要慢慢安静下来啦。",
+    );
+  } else if (action === "plant") {
+    furnitureState.plant = true;
+    isoPlant?.classList.add("is-watered");
+    applyFurnitureVisuals();
+    setFurnitureStatus("绿植浇水动画 · 叶片上的小水雾出现了.");
+    showIsoFurnitureBubble("喝饱水啦，叶子是不是更精神了？");
+    window.setTimeout(() => {
+      furnitureState.plant = false;
+      isoPlant?.classList.remove("is-watered");
+    }, 1800);
+  } else if (action === "media") {
+    furnitureState.media = !furnitureState.media;
+    applyFurnitureVisuals();
+    setFurnitureStatus(furnitureState.media ? "唱片机开始转动，音符飘出来了." : "唱片机已暂停.");
+    showIsoFurnitureBubble(
+      furnitureState.media ? "这张唱片是留给晚上的，一起听一小段吧~" : "音乐收起来啦，房间又安静了。",
+    );
+  } else if (action === "table") {
+    furnitureState.table = true;
+    isoTable?.classList.add("is-tea");
+    applyFurnitureVisuals();
+    setFurnitureStatus("茶几上的热茶正在冒热气.");
+    showIsoFurnitureBubble("给你留了一杯热茶，捧一会儿手就不冷啦。");
+    teaTimer = window.setTimeout(() => {
+      furnitureState.table = false;
+      isoTable?.classList.remove("is-tea");
+      teaTimer = null;
+    }, 6500);
+  }
+}
+
+
+/* ==========================================================================
+   Wireless charging
+   ========================================================================== */
+
+function energyValue() {
+  return appState.backend.energy === null ? 0 : appState.backend.energy;
+}
+
+function dockStateForView(view) {
+  if (view === "3d" && home3d) return home3d.getState();
+  if (view === "iso") return world.getDockState();
+  return { docked: false, docking: false, charging: false };
+}
+
+function currentDockState() {
+  return dockStateForView(appState.view);
+}
+
+function chargingLabelState() {
+  const energy = energyValue();
+  const dock = currentDockState();
+  const inCharge = chargeSession.active && chargeSession.view === appState.view;
+  if (dock.docked && energy >= 99.95) {
+    return { phase: "full", label: "已充满 · 可以出发啦", percent: energy };
+  }
+  return chargingStateFor({
+    energy,
+    docked: Boolean(dock.docked),
+    charging: Boolean(inCharge),
+  });
+}
+
+function updateChargeUI() {
+  const energy = energyValue();
+  const dock = currentDockState();
+  const state = chargingLabelState();
+  const isCharging = state.phase === "charging";
+
+  if (debugChargeEnergy) debugChargeEnergy.textContent = `${energy.toFixed(1)}%`;
+  if (debugChargeStatus) {
+    const suffix = dock.docking ? " · 正在归位"
+      : dock.docked ? " · 已接管移动"
+        : "";
+    debugChargeStatus.textContent = `${state.label}${suffix}`;
+  }
+  if (isoChargeStatus) {
+    isoChargeStatus.textContent = state.label + (dock.docked ? " · 已接管" : "");
+  }
+  if (isoChargeHud) isoChargeHud.classList.toggle("is-charging", isCharging);
+  if (debugLeaveDock) debugLeaveDock.disabled = !(dock.docked || dock.docking);
+  if (isoChargePad) {
+    isoChargePad.classList.toggle("is-active", Boolean(dock.docked || dock.docking));
+    isoChargePad.classList.toggle("is-charging", isCharging);
+  }
+}
+
+async function chargeTick() {
+  const session = chargeSession;
+  if (!session.active || session.inFlight) return;
+  if (document.hidden) {
+    stopCharging({ reason: "hidden", silent: true });
+    return;
+  }
+  const dock = dockStateForView(session.view);
+  if (!dock.docked) {
+    stopCharging({ reason: "left-dock" });
+    return;
+  }
+
+  session.inFlight = true;
+  actionDepth += 1;
+  backendEpoch += 1;
+  try {
+    const data = await apiRequest("/api/charge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (data && data.state) applyBackendState(data.state);
+    setOnline(true);
+    if (connectionErrorShown) clearDebugError();
+    if (session.view === "3d" && home3d) {
+      home3d.setEnergy(energyValue());
+    }
+    updateChargeUI();
+    if (data && data.full === true) {
+      stopCharging({ full: true });
+      updateLastEvent(`无线充电完成 · 精力 ${energyValue().toFixed(1)}%`);
+    }
+  } catch (error) {
+    if (session.active) {
+      setOnline(false);
+      showConnectionError(`充电请求失败: ${friendlyError(error)}`);
+      stopCharging({ reason: "error" });
+    }
+  } finally {
+    session.inFlight = false;
+    if (session === chargeSession) session.inFlight = false;
+    actionDepth -= 1;
+  }
+}
+
+function startCharging(view) {
+  if (chargeSession.active && chargeSession.view === view) return;
+  if (chargeSession.active) stopCharging({ silent: true });
+
+  const energy = energyValue();
+  if (energy >= 99.95) {
+    chargeSession = { active: false, view, timer: null, inFlight: false, full: true };
+    if (view === "iso") world.setCharging(false);
+    if (view === "3d" && home3d) home3d.setCharging(false);
+    updateChargeUI();
+    updateLastEvent("已停靠在充电座 · 电量已满");
+    return;
+  }
+
+  chargeSession = {
+    active: true,
+    view,
+    timer: null,
+    inFlight: false,
+    full: false,
+  };
+  lowEnergyAutoReturnArmed = false;
+  if (view === "iso") world.setCharging(true);
+  if (view === "3d" && home3d) home3d.setCharging(true);
+  updateChargeUI();
+  chargeSession.timer = window.setInterval(chargeTick, CHARGE_TICK_MS);
+  chargeTick();
+}
+
+function stopCharging({ full = false, silent = false, reason = "" } = {}) {
+  const view = chargeSession.view;
+  if (chargeSession.timer) {
+    clearInterval(chargeSession.timer);
+    chargeSession.timer = null;
+  }
+  chargeSession = {
+    active: false,
+    view,
+    timer: null,
+    inFlight: false,
+    full: Boolean(full || chargeSession.full),
+  };
+  if (view === "iso" && world?.getDockState) world.setCharging(false);
+  if (view === "3d" && home3d) home3d.setCharging(false);
+  updateChargeUI();
+  if (!silent) {
+    updateLastEvent(full ? "无线充电完成，充电座仍保持停靠状态." : `已停止充电${reason ? ` · ${reason}` : ""}.`);
+  }
+}
+
+function handleDockChange(view, event) {
+  if (view === "iso" && appState.view !== "iso") return;
+  if (view === "3d" && appState.view !== "3d") return;
+  if (!event) return;
+
+  if (event.docked) {
+    lowEnergyAutoReturnArmed = false;
+    updateLastEvent(view === "iso" ? "2.5D · 已自动归位到无线充电座" : "3D · 已自动归位到无线充电座");
+    startCharging(view);
+    if (view === "iso") {
+      showIsoFurnitureBubble("找到充电座啦，接下来交给我自己就好~", "tianbao", 3200);
+    }
+  } else {
+    if (chargeSession.active && chargeSession.view === view) {
+      stopCharging({ reason: event.reason || "undock" });
+    }
+    updateChargeUI();
+  }
+}
+
+function maybeAutoReturnCharging() {
+  if (appState.backend.energy === null || appState.backend.energy === undefined) return;
+  const energy = energyValue();
+  if (energy > AUTO_RETURN_THRESHOLD) lowEnergyAutoReturnArmed = true;
+  if (!autoReturnEnabled || !lowEnergyAutoReturnArmed) return;
+  if (energy > AUTO_RETURN_THRESHOLD) return;
+  if (chargeSession.active) return;
+  if (document.hidden) return;
+  if (appState.interaction.mode !== "idle") return;
+  if (actionDepth > 0 || autonomyInFlight) return;
+
+  if (appState.view === "iso" && world.active) {
+    const state = world.getDockState();
+    if (state.docked || state.docking) return;
+    if (world.returnToDock("auto")) {
+      lowEnergyAutoReturnArmed = false;
+      updateLastEvent("低电量 · 自动归位程序接管，正在回充.");
+      showIsoFurnitureBubble("电量有点低啦，我先自己回充电座~");
+      updateChargeUI();
+    }
+  } else if (appState.view === "3d" && home3d) {
+    const state = home3d.getState();
+    if (state.docked || state.docking) return;
+    if (home3d.returnToDock("auto")) {
+      lowEnergyAutoReturnArmed = false;
+      updateLastEvent("3D · 低电量自动归位程序接管.");
+      updateChargeUI();
+    }
+  }
+}
+
+function resumeSceneCharging(view) {
+  if (view === "iso" && world.active) {
+    const state = world.getDockState();
+    if (state.docked) startCharging("iso");
+    else maybeAutoReturnCharging();
+  } else if (view === "3d" && home3d) {
+    const state = home3d.getState();
+    if (state.docked) startCharging("3d");
+    else maybeAutoReturnCharging();
+  }
+}
+
+function requestReturnDock(trigger = "button") {
+  lowEnergyAutoReturnArmed = false;
+  if (appState.view === "3d" && home3d) {
+    home3d.returnToDock(trigger);
+    updateLastEvent("3D · 已请求回充.");
+  } else if (appState.view === "iso") {
+    world.returnToDock(trigger);
+    updateLastEvent("2.5D · 已请求回充.");
+  } else {
+    setView("iso");
+    window.requestAnimationFrame(() => {
+      world.returnToDock(trigger);
+      updateLastEvent("已切换到 2.5D 小屋并请求回充.");
+    });
+  }
+  setFurnitureStatus("回充指令已发出，充电座将接管归位和移动.", { announce: false });
+  updateChargeUI();
+}
+
+function leaveChargeDock() {
+  if (appState.view === "3d" && home3d) {
+    home3d.leaveDock("button");
+  } else if (appState.view === "iso") {
+    world.leaveDock("button");
+  }
+  if (chargeSession.active) stopCharging({ reason: "leave-dock" });
+  lowEnergyAutoReturnArmed = false;
+  updateChargeUI();
+  updateLastEvent("已离开充电座.");
+}
+
+/* ==========================================================================
+   Lazy 3D loader
+   ========================================================================== */
+
+function updateCameraModeUI(mode) {
+  if (cameraSimPreview) cameraSimPreview.classList.toggle("is-live", mode === "camera");
+  if (cameraStatus) {
+    cameraStatus.textContent = mode === "camera"
+      ? "tianbao 第一视角 · REC 中；WASD 移动，方向键或拖动环视，不读取真实摄像头。"
+      : "第一人称仿真画面已接通，点击下方按钮进入 REC 模式。";
+  }
+  if (mode === "camera") {
+    updateLastEvent("3D · tianbao 第一视角 · REC 实时渲染");
+  }
+}
+
+function createHome3DCallbacks() {
+  return {
+    onDockChange: (event) => handleDockChange("3d", event),
+    onPetStart: ({ level }) => {
+      threeDPetActive = true;
+      beginTouch(level, "3d");
+    },
+    onPetLevel: ({ level }) => changeTouchLevel(level),
+    onPetEnd: (meta) => {
+      threeDPetActive = false;
+      finishTouch({ ...meta, source: "3d" });
+    },
+    onPetCancel: () => {
+      threeDPetActive = false;
+      cancelTouch("3d");
+    },
+    onModeChange: (mode) => updateCameraModeUI(mode),
+    onRoomChange: (room) => {
+      if (room && appState.view === "3d") {
+        updateLastEvent(`3D 位置 · ${room.name}`);
+      }
+    },
+    onStatus: () => {},
+  };
+}
+
+function showHome3DLoadFailure(error) {
+  const loading = home3dRoot?.querySelector("#home3dLoading");
+  const fallback = home3dRoot?.querySelector("#home3dFallback");
+  if (loading) {
+    loading.classList.add("is-hidden");
+    loading.hidden = true;
+  }
+  if (fallback) fallback.hidden = false;
+  if (cameraStatus) cameraStatus.textContent = "3D 渲染加载失败，2.5D 场景仍可正常使用。";
+  if (error) console.error("tianbao home3d load:", error);
+  if (error) showDebugError(`3D 场景加载失败: ${friendlyError(error)}`);
+}
+
+function ensureHome3D() {
+  if (home3d) {
+    if (appState.view === "3d") home3d.activate();
+    return Promise.resolve(home3d);
+  }
+  if (home3dFailed) return Promise.resolve(null);
+  if (home3dPromise) return home3dPromise;
+
+  home3dPromise = import("./home3d.js?v=0.7.1")
+    .then((module) => {
+      if (!module || typeof module.Home3D !== "function") {
+        throw new Error("Home3D 模块格式不正确.");
+      }
+      const instance = new module.Home3D({
+        root: home3dRoot,
+        theme: currentSkinTheme,
+        callbacks: createHome3DCallbacks(),
+      });
+      if (!instance.mount()) {
+        throw new Error("WebGL 渲染器初始化失败.");
+      }
+      home3d = instance;
+      home3dRoot.__home3d = instance;
+      home3d.setEnergy(energyValue());
+      home3d.setFace(robot.currentEye || "open", robot.currentMouth || "smile");
+      if (appState.view === "3d") {
+        home3d.activate();
+        resumeSceneCharging("3d");
+      }
+      if (cameraStatus) cameraStatus.textContent = "tianbao 第一视角已接通；WASD 移动，方向键或拖动环视。";
+      return home3d;
+    })
+    .catch((error) => {
+      home3dFailed = true;
+      showHome3DLoadFailure(error);
+      return null;
+    })
+    .finally(() => {
+      home3dPromise = null;
+    });
+  return home3dPromise;
+}
+
+async function open3DCamera() {
+  if (appState.view !== "3d") setView("3d");
+  const instance = await ensureHome3D();
+  if (!instance) {
+    showConnectionError("tianbao 第一视角加载失败，请检查浏览器 WebGL 或刷新页面.");
+    return;
+  }
+  if (appState.view !== "3d") return;
+  instance.activate();
+  instance.setMode("camera");
+  updateCameraModeUI("camera");
+  if (panelOpen) closePanel();
+}
+
+/* ==========================================================================
+   Views: robot / 2.5D room / 3D home
    ========================================================================== */
 
 function setView(view) {
   if (!["robot", "iso", "3d"].includes(view) || appState.view === view) return;
 
+  if (skinPanelOpen) closeSkinPanel({ restoreFocus: false });
   cancelSimulation({ hideBubble: true });
+  if (furnitureBubbleTimer) {
+    clearTimeout(furnitureBubbleTimer);
+    furnitureBubbleTimer = null;
+  }
+  world.setBubble({ label: "", text: "", visible: false });
+
+  const previousView = appState.view;
+  if (previousView === "iso" || previousView === "3d") {
+    stopCharging({ silent: true });
+  }
+  if (previousView === "iso") world.deactivate();
+  if (previousView === "3d" && home3d) home3d.deactivate();
+  if (previousView === "3d") {
+    cameraSimPreview?.classList.remove("is-live");
+    if (cameraStatus) cameraStatus.textContent = "3D 已暂停；再次打开会恢复之前的视角。";
+  }
+
   appState.view = view;
   document.body.dataset.view = view;
-  world.deactivate();
 
   stage.hidden = view !== "robot";
   worldRoot.hidden = view !== "iso";
-  designView.hidden = view !== "3d";
+  home3dRoot.hidden = view !== "3d";
 
   for (const tab of viewTabs) {
     const active = tab.dataset.view === view;
@@ -1709,23 +2557,47 @@ function setView(view) {
     world.setFace(robot.currentEye || "open", robot.currentMouth || "smile");
     world.setExpression(resolveExpression());
     world.activate();
+    updateChargeUI();
+    updateNearbyInteraction();
+    window.requestAnimationFrame(() => {
+      if (appState.view === "iso") {
+        resumeSceneCharging("iso");
+        updateNearbyInteraction();
+      }
+    });
   }
 
+  if (view === "3d") {
+    ensureHome3D().then((instance) => {
+      if (!instance || appState.view !== "3d") return;
+      instance.activate();
+      instance.setEnergy(energyValue());
+      updateCameraModeUI(instance.getState().mode);
+      resumeSceneCharging("3d");
+    });
+  }
+
+  if (view !== "iso") updateNearbyInteraction();
   updateActionAvailability();
   updateHud();
   updateHudVisibility();
-  updateLastEvent(`切换到 ${view === "robot" ? "机器人" : view === "iso" ? "2.5D 小屋" : "3D 设计预览"} 视图.`);
+  updateChargeUI();
+  updateLastEvent(`切换到 ${view === "robot" ? "机器人" : view === "iso" ? "2.5D 小屋" : "3D 大平层"} 视图.`);
 }
 
 function updateActionAvailability() {
   const iso = appState.view === "iso";
+  const is3d = appState.view === "3d";
   if (actionModeNote) {
     actionModeNote.textContent = iso
       ? "2.5D 小屋已激活 · 可以控制 tianbao 移动."
-      : "切换到 2.5D 小屋后可用.";
-    actionModeNote.classList.toggle("is-ready", iso);
+      : is3d
+        ? "3D 大平层已激活 · 点击地面移动，或打开仿真摄像头."
+        : "切换到 2.5D 小屋或 3D 大平层后可用.";
+    actionModeNote.classList.toggle("is-ready", iso || is3d);
   }
   if (actionGotoIso) actionGotoIso.hidden = iso;
+  if (actionGoto3d) actionGoto3d.hidden = is3d;
   for (const element of document.querySelectorAll("#panelPaneAction [data-move], #panelPaneAction [data-move-action]")) {
     element.disabled = !iso;
   }
@@ -2768,6 +3640,7 @@ function setPanelTab(tab, { focus = false } = {}) {
 }
 
 function openPanel(tab = null) {
+  if (skinPanelOpen) closeSkinPanel({ restoreFocus: false });
   if (tab) setPanelTab(tab);
   if (panelOpen) return;
   panelOpen = true;
@@ -2839,45 +3712,30 @@ updateActionAvailability();
 
 voiceOpenPanel.addEventListener("click", () => openPanel("voice"));
 
-designPetButton.addEventListener("pointerdown", (event) => {
-  if (event.pointerType === "mouse" && event.button !== 0) return;
-  event.preventDefault();
-  designPetPointerAt = performance.now();
-  if (designPetActive) return;
-  try { designPetButton.setPointerCapture(event.pointerId); } catch { /* ignore */ }
-  startDesignPet();
-});
-designPetButton.addEventListener("pointerup", (event) => {
-  event.preventDefault();
-  endDesignPet(true);
-});
-designPetButton.addEventListener("pointercancel", () => endDesignPet(false));
-designPetButton.addEventListener("lostpointercapture", () => endDesignPet(false));
-designPetButton.addEventListener("contextmenu", (event) => event.preventDefault());
-designPetButton.addEventListener("click", (event) => {
-  // Keyboard activation has no pointer hold; use a normal medium touch.
-  // Ignore the synthetic click that can follow a touch/pointer release.
-  if (event.detail !== 0 || designPetActive) return;
-  if (performance.now() - designPetPointerAt < 600) return;
-  designPetActive = true;
-  designPetStart = performance.now();
-  beginTouch("medium", "design");
-  setDesignPetFace("medium");
-  if (designPetStatus) designPetStatus.textContent = "摸摸中...";
-  designPetTimers = [window.setTimeout(() => {
-    if (!designPetActive) return;
-    designPetActive = false;
-    setDesignPetFace("idle");
-    if (designPetStatus) designPetStatus.textContent = "摸摸已送出, 等 tianbao 的回应...";
-    finishTouch({ amount: 15, level: "medium", source: "design" });
-  }, 900)];
-});
-
 actionGotoIso.addEventListener("click", () => {
   setView("iso");
   updateActionAvailability();
 });
-cameraButton.disabled = true;
+actionGoto3d?.addEventListener("click", () => {
+  setView("3d");
+  updateActionAvailability();
+});
+cameraButton.addEventListener("click", () => open3DCamera());
+debugReturnDock?.addEventListener("click", () => requestReturnDock("debug"));
+debugLeaveDock?.addEventListener("click", leaveChargeDock);
+if (autoReturnToggle) {
+  autoReturnToggle.checked = autoReturnEnabled;
+  autoReturnToggle.addEventListener("change", () => {
+    autoReturnEnabled = autoReturnToggle.checked;
+    try {
+      localStorage.setItem(AUTO_RETURN_STORAGE_KEY, autoReturnEnabled ? "1" : "0");
+    } catch { /* localStorage may be unavailable */ }
+    lowEnergyAutoReturnArmed = true;
+    updateLastEvent(`低电量自动回充已${autoReturnEnabled ? "开启" : "关闭"}.`);
+    if (autoReturnEnabled) maybeAutoReturnCharging();
+  });
+}
+wireSkinPanel();
 
 voiceToggle.addEventListener("click", handleVoiceToggle);
 if (voiceToggle25d) voiceToggle25d.addEventListener("click", handleVoiceToggle);
@@ -2929,7 +3787,24 @@ if ("speechSynthesis" in window && typeof window.speechSynthesis.addEventListene
 }
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && panelOpen) closePanel();
+  if (event.key === "Escape") {
+    if (skinPanelOpen) {
+      event.preventDefault();
+      closeSkinPanel();
+      return;
+    }
+    if (panelOpen) {
+      event.preventDefault();
+      closePanel();
+    }
+    return;
+  }
+
+  if (event.code !== "KeyE" || event.repeat || event.isComposing) return;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  if (isTypingTarget(event.target)) return;
+  if (appState.view !== "iso") return;
+  if (pressEInteraction()) event.preventDefault();
 });
 
 touchSlider.addEventListener("input", updateSliderLabels);
@@ -2963,18 +3838,25 @@ listenInput.addEventListener("keydown", (event) => {
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    // Do not replay a backlog of events accumulated while the tab was hidden.
-    autonomyCursor = null;
-    pendingAutonomyEvent = null;
-    pollState();
+  if (document.hidden) {
+    stopCharging({ silent: true, reason: "hidden" });
+    return;
   }
+  // Do not replay a backlog of events accumulated while the tab was hidden.
+  autonomyCursor = null;
+  pendingAutonomyEvent = null;
+  if (appState.view === "iso" || appState.view === "3d") {
+    resumeSceneCharging(appState.view);
+  }
+  pollState();
 });
 
 /* ==========================================================================
    Boot
    ========================================================================== */
 
+applySkinTheme(currentSkinTheme, { persist: false });
+if (autoReturnToggle) autoReturnToggle.checked = autoReturnEnabled;
 setPanelTab("debug");
 updateSliderLabels();
 updateDebugState();
@@ -2982,6 +3864,8 @@ updateDebugMode();
 updateLastEvent("暂无");
 updateHudVisibility();
 updateActionAvailability();
+updateChargeUI();
+updateNearbyInteraction();
 updateCustomVoiceLabels();
 renderVoiceLab();
 renderVoiceUI(voice.snapshot());

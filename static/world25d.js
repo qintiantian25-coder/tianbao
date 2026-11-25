@@ -36,6 +36,10 @@ const QUICK_SHIFT_MS = 230;
 const JUMP_SPEED = 430;
 const GRAVITY = 1350;
 
+const CHARGE_DOCK = { x: 17.5, y: 89.5 };
+const CHARGE_ZONE = { halfX: 5.8, halfY: 6.2 };
+const DOCK_LEAVE_COOLDOWN_MS = 1800;
+
 const MINI_EYES = new Set(["open", "happy", "calm", "sad", "squint", "closed", "wide", "bright", "neutral"]);
 const MINI_MOUTHS = new Set(["smile", "laugh", "calm", "frown", "wail", "o", "flat", "w", "wide", "bliss"]);
 
@@ -76,7 +80,7 @@ function isTypingTarget(target) {
 }
 
 export class World25D {
-  constructor({ root, entity, char, flip, shadow, bubble, onStatus }) {
+  constructor({ root, entity, char, flip, shadow, bubble, onStatus, onDockChange }) {
     this.root = root;
     this.entity = entity;
     this.char = char;
@@ -84,6 +88,8 @@ export class World25D {
     this.shadow = shadow;
     this.bubble = bubble;
     this.onStatus = onStatus || (() => {});
+    this.onDockChange = onDockChange || (() => {});
+    this.chargePadEl = root.querySelector("#isoChargePad");
 
     this.active = false;
     this.pos = { x: 50, y: 74 };
@@ -105,6 +111,11 @@ export class World25D {
     this.lastMotion = "";
     this.eye = "open";
     this.mouth = "smile";
+    this.docked = false;
+    this.docking = false;
+    this.dockTrigger = null;
+    this.dockCooldownUntil = 0;
+    this.charging = false;
 
     this.miniEyes = [...root.querySelectorAll("[data-mini-eye]")];
     this.miniMouths = [...root.querySelectorAll("[data-mini-mouth]")];
@@ -173,6 +184,7 @@ export class World25D {
     const direction = DIRECTION_CODES[event.code];
     if (direction) {
       event.preventDefault();
+      if (this.docked || this.docking) this.leaveDock("move");
       this.keyDirs.add(direction);
       this.changed();
       return;
@@ -219,6 +231,7 @@ export class World25D {
 
   pressDirection(direction, pressed) {
     if (!this.active) return;
+    if (pressed && (this.docked || this.docking)) this.leaveDock("move");
     if (pressed) this.buttonDirs.add(direction);
     else this.buttonDirs.delete(direction);
     this.changed();
@@ -227,6 +240,7 @@ export class World25D {
   /** Small step for a quick tap / keyboard activation of a direction button. */
   nudge(direction, amount = 2.4) {
     if (!this.active) return;
+    if (this.docked || this.docking) this.leaveDock("move");
     let dx = 0;
     let dy = 0;
     if (direction === "left") dx = -amount;
@@ -257,7 +271,7 @@ export class World25D {
   }
 
   jump() {
-    if (!this.active || !this.grounded) return false;
+    if (!this.active || !this.grounded || this.docked || this.docking) return false;
     this.grounded = false;
     this.jumpV = JUMP_SPEED;
     this.char.classList.add("is-jumping");
@@ -266,7 +280,7 @@ export class World25D {
   }
 
   dash() {
-    if (!this.active) return false;
+    if (!this.active || this.docked || this.docking) return false;
     const now = performance.now();
     if (now < this.dashCooldownUntil) return false;
 
@@ -283,6 +297,107 @@ export class World25D {
     this.entity.classList.add("is-dashing");
     this.emitStatus(true);
     return true;
+  }
+
+  /* ---------------- wireless charging dock ---------------- */
+
+  beginDock(trigger = "manual") {
+    if (!this.active || this.docked || this.docking) return false;
+    this.docking = true;
+    this.dockTrigger = trigger;
+    this.clearInputs();
+    this.char.classList.add("is-docking");
+    this.entity.classList.remove("is-charging");
+    this.chargePadEl?.classList.add("is-active");
+    this.emitStatus(true);
+    return true;
+  }
+
+  isNearChargePad() {
+    return Math.abs(this.pos.x - CHARGE_DOCK.x) <= CHARGE_ZONE.halfX
+      && Math.abs(this.pos.y - CHARGE_DOCK.y) <= CHARGE_ZONE.halfY;
+  }
+
+  completeDock() {
+    this.pos.x = CHARGE_DOCK.x;
+    this.pos.y = CHARGE_DOCK.y;
+    this.docking = false;
+    this.docked = true;
+    this.facing = "left";
+    this.char.classList.remove("is-docking", "is-moving", "is-running");
+    this.char.classList.add("is-docked");
+    this.chargePadEl?.classList.add("is-active");
+    this.render();
+    this.emitStatus(true);
+    this.onDockChange({
+      docked: true,
+      docking: false,
+      trigger: this.dockTrigger || "manual",
+      x: this.pos.x,
+      y: this.pos.y,
+    });
+    this.dockTrigger = null;
+  }
+
+  leaveDock(reason = "manual") {
+    if (!this.docked && !this.docking) return false;
+    const wasDocked = this.docked;
+    this.docked = false;
+    this.docking = false;
+    this.dockCooldownUntil = performance.now() + DOCK_LEAVE_COOLDOWN_MS;
+    this.char.classList.remove("is-docked", "is-docking");
+    this.entity.classList.remove("is-charging");
+    this.charging = false;
+    this.chargePadEl?.classList.remove("is-active", "is-charging");
+    this.grounded = true;
+    this.jumpZ = 0;
+    this.jumpV = 0;
+    this.emitStatus(true);
+    this.onDockChange({
+      docked: false,
+      docking: false,
+      trigger: this.dockTrigger || "manual",
+      reason,
+      x: this.pos.x,
+      y: this.pos.y,
+    });
+    this.dockTrigger = null;
+    return wasDocked;
+  }
+
+  returnToDock(trigger = "manual") {
+    if (!this.active) return false;
+    if (this.docked) {
+      this.emitStatus(true);
+      this.onDockChange({
+        docked: true,
+        docking: false,
+        trigger,
+        x: this.pos.x,
+        y: this.pos.y,
+      });
+      return true;
+    }
+    this.docking = false;
+    this.char.classList.remove("is-docking");
+    return this.beginDock(trigger);
+  }
+
+  setCharging(charging) {
+    this.charging = Boolean(charging);
+    this.entity.classList.toggle("is-charging", this.charging && this.docked);
+    this.chargePadEl?.classList.toggle("is-charging", this.charging && this.docked);
+    this.emitStatus(true);
+  }
+
+  getDockState() {
+    return {
+      docked: this.docked,
+      docking: this.docking,
+      charging: this.charging,
+      x: this.pos.x,
+      y: this.pos.y,
+    };
   }
 
   /* ---------------- status / face / bubble ---------------- */
@@ -316,6 +431,9 @@ export class World25D {
       grounded: this.grounded,
       facing: this.facing,
       runToggle: this.runToggle,
+      docked: this.docked,
+      docking: this.docking,
+      charging: this.charging,
     });
   }
 
@@ -380,7 +498,27 @@ export class World25D {
     this.lastTs = timestamp;
     const now = performance.now();
 
-    const input = this.inputVector();
+    if (this.docking) {
+      const dx = CHARGE_DOCK.x - this.pos.x;
+      const dy = CHARGE_DOCK.y - this.pos.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance <= 0.65) {
+        this.completeDock();
+      } else {
+        const step = Math.min(distance, 150 * dt);
+        this.pos.x += (dx / distance) * step;
+        this.pos.y += (dy / distance) * step;
+        this.facing = dx < 0 ? "left" : "right";
+        this.char.classList.add("is-moving");
+        this.char.classList.remove("is-running");
+      }
+      this.render(timestamp);
+      this.emitStatus(false);
+      this.rafId = window.requestAnimationFrame(this.tick);
+      return;
+    }
+
+    const input = this.docked ? { x: 0, y: 0 } : this.inputVector();
     const moving = input.x !== 0 || input.y !== 0;
     const running = this.shiftHeld || this.runToggle;
     let speedX = WALK_X;
@@ -393,12 +531,12 @@ export class World25D {
     let moveX = input.x * speedX;
     let moveY = input.y * speedY;
 
-    if (now < this.dashUntil) {
+    if (!this.docked && now < this.dashUntil) {
       moveX = this.dashDir.x * WALK_X * DASH_MULT;
       moveY = this.dashDir.y * WALK_Y * DASH_MULT;
     }
 
-    if (moveX !== 0 || moveY !== 0) {
+    if (!this.docked && (moveX !== 0 || moveY !== 0)) {
       const depth = this.getDepth();
       const minX = 17 - depth * 7;
       const maxX = 83 + depth * 7;
@@ -406,6 +544,14 @@ export class World25D {
       this.pos.y = Math.max(Y_MIN, Math.min(Y_MAX, this.pos.y + moveY * dt));
       if (input.x < 0) this.facing = "left";
       if (input.x > 0) this.facing = "right";
+    }
+
+    // The pad takes over as soon as tianbao is close enough. A short
+    // cooldown after leaving prevents an immediate re-dock while walking out.
+    if (!this.docked && !this.docking
+        && now > this.dockCooldownUntil
+        && this.isNearChargePad()) {
+      this.beginDock("proximity");
     }
 
     if (!this.grounded) {
