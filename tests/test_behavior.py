@@ -15,7 +15,12 @@ from core.action_executor import execute_action
 from core.state_store import StateStore
 from core.companion_request import CompanionRequestTracker
 from core.companion_session import CompanionSession
-from core.interaction_tendency import decide_interaction_tendency
+from core.interaction_tendency import (
+    decide_interaction_tendency,
+    is_recent_interaction,
+    decide_contextual_tendency,
+    count_recent_interactions,
+)
 
 
 # ==========================================
@@ -891,6 +896,132 @@ class TestInteractionTendency(unittest.TestCase):
 
         self.assertEqual(state, before)
 
+
+
+class TestContextualInteractionTendency(unittest.TestCase):
+    """v0.5 近期互动与上下文倾向测试。"""
+
+    def test_recent_interaction_boundaries(self):
+        """None、0秒、60秒、超过60秒及未来时间。"""
+        cases = [
+            (None, 1000, False),
+            (1000, 990, False),
+            (1000, 1000, True),
+            (1000, 1030, True),
+            (1000, 1060, True),
+            (1000, 1061, True),
+            (1000, 1300, True),
+            (1000, 1301, False),
+        ]
+
+        for last_time, now, expected in cases:
+            with self.subTest(
+                last_time=last_time,
+                now=now
+            ):
+                session = {
+                    "last_interaction_at": last_time
+                }
+                self.assertEqual(
+                    is_recent_interaction(session, now),
+                    expected
+                )
+
+    def test_neutral_becomes_affectionate_when_recent(self):
+        """近期互动让中性倾向转为亲昵。"""
+        state = {
+            "emotion": "calm",
+            "energy": 80,
+            "social_need": 20
+        }
+        session = {"last_interaction_at": 1000}
+
+        self.assertEqual(
+            decide_contextual_tendency(state, session, 1030),
+            "affectionate"
+        )
+
+    def test_neutral_remains_neutral_when_not_recent(self):
+        """长时间未互动或从未互动，保持中性。"""
+        state = {
+            "emotion": "calm",
+            "energy": 80,
+            "social_need": 20
+        }
+
+        for last_time in (None, 1000):
+            session = {
+                "last_interaction_at": last_time
+            }
+            self.assertEqual(
+                decide_contextual_tendency(
+                    state, session, 1400
+                ),
+                "neutral"
+            )
+
+    def test_context_does_not_override_other_tendencies(self):
+        """近期互动不覆盖其他已有倾向。"""
+        session = {"last_interaction_at": 1000}
+
+        cases = [
+            ("sad", 80, 20, "gentle"),
+            ("happy", 20, 90, "tired"),
+            ("happy", 80, 90, "playful"),
+            ("calm", 80, 90, "affectionate"),
+        ]
+
+        for emotion, energy, social, expected in cases:
+            state = {
+                "emotion": emotion,
+                "energy": energy,
+                "social_need": social
+            }
+            self.assertEqual(
+                decide_contextual_tendency(
+                    state, session, 1030
+                ),
+                expected
+            )
+
+    def test_context_functions_do_not_modify_inputs(self):
+        """综合判断不修改原始状态和会话记录。"""
+        state = {
+            "emotion": "calm",
+            "energy": 80,
+            "social_need": 20
+        }
+        session = {"last_interaction_at": 1000}
+
+        original_state = state.copy()
+        original_session = session.copy()
+
+        decide_contextual_tendency(state, session, 1030)
+
+        self.assertEqual(state, original_state)
+        self.assertEqual(session, original_session)
+
+
+
+    def test_count_recent_interactions_five_minutes(self):
+        """统计最近300秒内的互动次数。"""
+        cases = [
+            ([], 1300, 0),
+            ([1000, 1010, 1020], 1030, 3),
+            ([1000, 1010, 1300, 1301], 1300, 3),
+            ([999, 1000, 1301], 1300, 1),
+            ([1000, 1100], 1400, 1),
+        ]
+
+        for times, now, expected in cases:
+            with self.subTest(
+                times=times,
+                now=now
+            ):
+                self.assertEqual(
+                    count_recent_interactions(times, now),
+                    expected
+                )
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
