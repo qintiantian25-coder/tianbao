@@ -902,7 +902,7 @@ class TestContextualInteractionTendency(unittest.TestCase):
     """v0.5 近期互动与上下文倾向测试。"""
 
     def test_recent_interaction_boundaries(self):
-        """None、0秒、60秒、超过60秒及未来时间。"""
+        """None、0秒、300秒、超过300秒及未来时间。"""
         cases = [
             (None, 1000, False),
             (1000, 990, False),
@@ -1022,6 +1022,155 @@ class TestContextualInteractionTendency(unittest.TestCase):
                     count_recent_interactions(times, now),
                     expected
                 )
+
+
+class TestCompanionSessionRecentHistory(unittest.TestCase):
+    """v0.5 最近五分钟互动历史管理测试。"""
+
+    def setUp(self):
+        self.session = CompanionSession()
+
+    def test_initial_history_and_inactive_interaction(self):
+        """初始化为空；未开始会话不能添加互动。"""
+        self.assertEqual(self.session.interaction_times, [])
+        self.assertEqual(self.session.get_recent_count(1000), 0)
+
+        self.assertFalse(
+            self.session.interact(1000, "touch")
+        )
+        self.assertEqual(self.session.interaction_times, [])
+
+    def test_append_and_prune_history(self):
+        """新互动能够追加时间，并移除过期记录。"""
+        self.session.start(1000, "touch")
+        self.session.interact(1100, "touch")
+        self.session.interact(1300, "touch")
+        self.session.interact(1301, "touch")
+        self.session.interact(1401, "touch")
+
+        self.assertEqual(
+            self.session.interaction_times,
+            [1300, 1301, 1401]
+        )
+        self.assertEqual(self.session.interaction_count, 5)
+        self.assertEqual(self.session.get_recent_count(1401), 3)
+        self.assertTrue(self.session.is_active)
+
+    def test_five_minute_boundaries(self):
+        """恰好300秒计入，超过300秒不计入。"""
+        self.session.start(1000, "touch")
+        self.session.interact(1300, "touch")
+
+        self.assertEqual(
+            self.session.get_recent_count(1300),
+            2
+        )
+
+        self.session.interact(1301, "touch")
+
+        self.assertEqual(
+            self.session.interaction_times,
+            [1300, 1301]
+        )
+        self.assertEqual(self.session.get_recent_count(1600), 2)
+        self.assertEqual(self.session.get_recent_count(1601), 1)
+        self.assertEqual(self.session.get_recent_count(1602), 0)
+
+    def test_read_does_not_modify_history(self):
+        """只读统计不修改历史，也不结束会话。"""
+        self.session.start(1000, "touch")
+
+        original = self.session.interaction_times.copy()
+
+        self.assertEqual(self.session.get_recent_count(2000), 0)
+        self.assertEqual(self.session.interaction_times, original)
+        self.assertEqual(self.session.interaction_count, 1)
+        self.assertTrue(self.session.is_active)
+
+    def test_restart_resets_history(self):
+        """新会话清空上一段会话的时间历史。"""
+        self.session.start(1000, "touch")
+        self.session.interact(1050, "touch")
+
+        self.assertFalse(
+            self.session.start(1100, "touch")
+        )
+        self.assertEqual(
+            self.session.interaction_times,
+            [1000, 1050]
+        )
+
+        self.assertTrue(self.session.end())
+        self.assertTrue(self.session.start(2000, "touch"))
+
+        self.assertEqual(
+            self.session.interaction_times,
+            [2000]
+        )
+        self.assertEqual(self.session.interaction_count, 1)
+        self.assertEqual(self.session.get_recent_count(2000), 1)
+
+    def test_concurrent_history_updates(self):
+        """多个线程同时互动，累计次数和历史不丢失。"""
+        self.session.start(1000, "touch")
+
+        errors = []
+        gate = threading.Event()
+
+        worker_count = 8
+        updates_per_worker = 25
+
+        def worker():
+            gate.wait()
+            try:
+                for _ in range(updates_per_worker):
+                    success = self.session.interact(
+                        1010, "touch"
+                    )
+                    if not success:
+                        raise AssertionError(
+                            "活动会话中的互动不应失败"
+                        )
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(
+                target=worker,
+                daemon=True
+            )
+            for _ in range(worker_count)
+        ]
+
+        for thread in threads:
+            thread.start()
+
+        gate.set()
+
+        for thread in threads:
+            thread.join(timeout=3)
+
+        self.assertTrue(
+            all(not thread.is_alive() for thread in threads),
+            "并发互动疑似死锁"
+        )
+        self.assertFalse(errors, errors)
+
+        expected = 1 + worker_count * updates_per_worker
+
+        self.assertEqual(
+            self.session.interaction_count,
+            expected
+        )
+        self.assertEqual(
+            len(self.session.interaction_times),
+            expected
+        )
+        self.assertEqual(
+            self.session.get_recent_count(1010),
+            expected
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
