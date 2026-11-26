@@ -1943,5 +1943,62 @@ class TestPromptBuilder(unittest.TestCase):
             messages[0]["content"],
         )
 
+
+from core.response_guard import (
+    is_valid_chat_reply,
+    process_model_reply,
+)
+
+
+class TestResponseGuard(unittest.TestCase):
+    """v0.7 MiniCPM 回复格式检查与异常回退测试。"""
+
+    def setUp(self):
+        self.fallback = (
+            "主人，我刚刚没组织好语言，可以再说一次吗？"
+        )
+
+    def test_validity(self):
+        cases = [
+            ("主人你好！", True),
+            ("  主人你好！  ", True),
+            ("", False),
+            ("   ", False),
+            ("<think>思考内容</think>你好", False),
+            (r"\begin{tabular}你好", False),
+            (r"\end{tabular}", False),
+            ("$$你好$$", False),
+        ]
+
+        for reply, expected in cases:
+            with self.subTest(reply=reply):
+                self.assertEqual(
+                    is_valid_chat_reply(reply), expected
+                )
+
+    def test_normal_reply(self):
+        result = process_model_reply("主人，我来陪你啦！")
+        self.assertEqual(result, "主人，我来陪你啦！")
+
+    def test_strip_reply(self):
+        result = process_model_reply("  主人你好呀！  ")
+        self.assertEqual(result, "主人你好呀！")
+
+    def test_fallback_reply(self):
+        invalid_replies = [
+            "",
+            "   ",
+            "<think>正在思考</think>你好",
+            r"\begin{tabular}你好",
+            "$$你好$$",
+        ]
+
+        for reply in invalid_replies:
+            with self.subTest(reply=reply):
+                self.assertEqual(
+                    process_model_reply(reply),
+                    self.fallback
+                )
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
