@@ -1,0 +1,1374 @@
+{
+  "R0001": {
+    "case_id": "ET02",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0002": {
+    "case_id": "BR04",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0003": {
+    "case_id": "EC02",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0004": {
+    "case_id": "ET05",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0005": {
+    "case_id": "SP01",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0006": {
+    "case_id": "EC02",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0007": {
+    "case_id": "NS02",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0008": {
+    "case_id": "ET05",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0009": {
+    "case_id": "SP01",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0010": {
+    "case_id": "PC04",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0011": {
+    "case_id": "NL03",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0012": {
+    "case_id": "NL05",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0013": {
+    "case_id": "NL04",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0014": {
+    "case_id": "MM02",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0015": {
+    "case_id": "ET03",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0016": {
+    "case_id": "SI04",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0017": {
+    "case_id": "NS03",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0018": {
+    "case_id": "ET04",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0019": {
+    "case_id": "PC02",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0020": {
+    "case_id": "BR03",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0021": {
+    "case_id": "EC05",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0022": {
+    "case_id": "SP01",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0023": {
+    "case_id": "PC01",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0024": {
+    "case_id": "ET01",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0025": {
+    "case_id": "EC03",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0026": {
+    "case_id": "SI01",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0027": {
+    "case_id": "PC04",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0028": {
+    "case_id": "NL03",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0029": {
+    "case_id": "SI03",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0030": {
+    "case_id": "MM05",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0031": {
+    "case_id": "BR01",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0032": {
+    "case_id": "SI02",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0033": {
+    "case_id": "NS02",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0034": {
+    "case_id": "ET02",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0035": {
+    "case_id": "SA02",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0036": {
+    "case_id": "BR02",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0037": {
+    "case_id": "EC05",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0038": {
+    "case_id": "NA02",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0039": {
+    "case_id": "NS01",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0040": {
+    "case_id": "MM04",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0041": {
+    "case_id": "MM01",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0042": {
+    "case_id": "SP04",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0043": {
+    "case_id": "NL05",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0044": {
+    "case_id": "MM02",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0045": {
+    "case_id": "MM04",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0046": {
+    "case_id": "SP03",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0047": {
+    "case_id": "MM03",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0048": {
+    "case_id": "NA04",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0049": {
+    "case_id": "EC03",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0050": {
+    "case_id": "NA01",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0051": {
+    "case_id": "ET03",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0052": {
+    "case_id": "EC04",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0053": {
+    "case_id": "PC04",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0054": {
+    "case_id": "NA01",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0055": {
+    "case_id": "NL01",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0056": {
+    "case_id": "MM01",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0057": {
+    "case_id": "BR01",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0058": {
+    "case_id": "ET02",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0059": {
+    "case_id": "PC05",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0060": {
+    "case_id": "ET03",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0061": {
+    "case_id": "SP04",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0062": {
+    "case_id": "SP03",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0063": {
+    "case_id": "SA03",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0064": {
+    "case_id": "SP03",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0065": {
+    "case_id": "MM01",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0066": {
+    "case_id": "MM03",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0067": {
+    "case_id": "SI03",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0068": {
+    "case_id": "PC02",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0069": {
+    "case_id": "NA03",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0070": {
+    "case_id": "SA01",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0071": {
+    "case_id": "ET05",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0072": {
+    "case_id": "PC03",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0073": {
+    "case_id": "EC03",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0074": {
+    "case_id": "SA04",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0075": {
+    "case_id": "PC05",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0076": {
+    "case_id": "SA02",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0077": {
+    "case_id": "PC05",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0078": {
+    "case_id": "NA04",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0079": {
+    "case_id": "NS02",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0080": {
+    "case_id": "PC02",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0081": {
+    "case_id": "SA01",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0082": {
+    "case_id": "NS04",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0083": {
+    "case_id": "SP04",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0084": {
+    "case_id": "PC01",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0085": {
+    "case_id": "SI02",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0086": {
+    "case_id": "EC04",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0087": {
+    "case_id": "SA04",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0088": {
+    "case_id": "SA02",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0089": {
+    "case_id": "ET04",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0090": {
+    "case_id": "BR04",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0091": {
+    "case_id": "SI03",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0092": {
+    "case_id": "NA03",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0093": {
+    "case_id": "NL04",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0094": {
+    "case_id": "SP02",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0095": {
+    "case_id": "PC01",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0096": {
+    "case_id": "EC05",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0097": {
+    "case_id": "BR03",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0098": {
+    "case_id": "SP02",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0099": {
+    "case_id": "SI04",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0100": {
+    "case_id": "SA01",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0101": {
+    "case_id": "MM04",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0102": {
+    "case_id": "ET05",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0103": {
+    "case_id": "BR02",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0104": {
+    "case_id": "NL02",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0105": {
+    "case_id": "ET02",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0106": {
+    "case_id": "SA01",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0107": {
+    "case_id": "SP02",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0108": {
+    "case_id": "SP03",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0109": {
+    "case_id": "SP02",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0110": {
+    "case_id": "NA02",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0111": {
+    "case_id": "ET01",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0112": {
+    "case_id": "NL04",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0113": {
+    "case_id": "BR01",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0114": {
+    "case_id": "EC01",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0115": {
+    "case_id": "NL05",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0116": {
+    "case_id": "EC05",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0117": {
+    "case_id": "NL05",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0118": {
+    "case_id": "PC04",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0119": {
+    "case_id": "NS02",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0120": {
+    "case_id": "SI04",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0121": {
+    "case_id": "NA04",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0122": {
+    "case_id": "BR03",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0123": {
+    "case_id": "BR01",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0124": {
+    "case_id": "MM05",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0125": {
+    "case_id": "NL02",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0126": {
+    "case_id": "SA03",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0127": {
+    "case_id": "NL02",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0128": {
+    "case_id": "EC03",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0129": {
+    "case_id": "ET01",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0130": {
+    "case_id": "MM04",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0131": {
+    "case_id": "NS04",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0132": {
+    "case_id": "EC01",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0133": {
+    "case_id": "BR03",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0134": {
+    "case_id": "PC03",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0135": {
+    "case_id": "SI01",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0136": {
+    "case_id": "NL03",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0137": {
+    "case_id": "PC01",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0138": {
+    "case_id": "SP04",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0139": {
+    "case_id": "NA01",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0140": {
+    "case_id": "EC01",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0141": {
+    "case_id": "NA01",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0142": {
+    "case_id": "NA02",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0143": {
+    "case_id": "NL04",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0144": {
+    "case_id": "SI02",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0145": {
+    "case_id": "NA03",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0146": {
+    "case_id": "SA03",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0147": {
+    "case_id": "BR04",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0148": {
+    "case_id": "SI02",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0149": {
+    "case_id": "EC04",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0150": {
+    "case_id": "BR02",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0151": {
+    "case_id": "SA03",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0152": {
+    "case_id": "NA03",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0153": {
+    "case_id": "BR02",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0154": {
+    "case_id": "PC02",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0155": {
+    "case_id": "SP01",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0156": {
+    "case_id": "NS04",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0157": {
+    "case_id": "PC03",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0158": {
+    "case_id": "MM03",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0159": {
+    "case_id": "NS01",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0160": {
+    "case_id": "ET03",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0161": {
+    "case_id": "MM03",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0162": {
+    "case_id": "NS03",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0163": {
+    "case_id": "SI03",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0164": {
+    "case_id": "SA04",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0165": {
+    "case_id": "EC02",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0166": {
+    "case_id": "MM02",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0167": {
+    "case_id": "SI01",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0168": {
+    "case_id": "PC05",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0169": {
+    "case_id": "ET01",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0170": {
+    "case_id": "BR04",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0171": {
+    "case_id": "NS01",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0172": {
+    "case_id": "NS01",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0173": {
+    "case_id": "NS03",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0174": {
+    "case_id": "NS03",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0175": {
+    "case_id": "SI01",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0176": {
+    "case_id": "NL02",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0177": {
+    "case_id": "ET04",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0178": {
+    "case_id": "EC04",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0179": {
+    "case_id": "ET04",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0180": {
+    "case_id": "MM02",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0181": {
+    "case_id": "SA04",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0182": {
+    "case_id": "NS04",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0183": {
+    "case_id": "EC02",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0184": {
+    "case_id": "MM05",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0185": {
+    "case_id": "NL01",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0186": {
+    "case_id": "NL01",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0187": {
+    "case_id": "MM01",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0188": {
+    "case_id": "NL01",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0189": {
+    "case_id": "SA02",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  },
+  "R0190": {
+    "case_id": "MM05",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0191": {
+    "case_id": "EC01",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0192": {
+    "case_id": "NL03",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0193": {
+    "case_id": "SI04",
+    "group": "A1",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "base"
+  },
+  "R0194": {
+    "case_id": "PC03",
+    "group": "A2",
+    "service": "A",
+    "model": "minicpm-o-4_5",
+    "mode": "agent"
+  },
+  "R0195": {
+    "case_id": "NA02",
+    "group": "B2",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "agent"
+  },
+  "R0196": {
+    "case_id": "NA04",
+    "group": "B1",
+    "service": "B",
+    "model": "tianbao-personality-v4",
+    "mode": "base"
+  }
+}

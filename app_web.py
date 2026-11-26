@@ -27,6 +27,16 @@ from flask import Flask, jsonify, render_template, request, session
 
 from backend.autonomy_events import AutonomyEventBuffer
 from backend.autonomy_runner import AutonomyLoop, autonomy_logger
+from backend.compare_agent import (
+    ALL_COMPARE_GROUPS,
+    COMPARE_HISTORY_MESSAGES,
+    COMPARE_MAX_CONTEXT_TOKENS,
+    COMPARE_MAX_TOKENS,
+    COMPARE_TEMPERATURE,
+    DEFAULT_COMPARE_GROUPS,
+    AgentComparisonRunner,
+    normalise_compare_history,
+)
 from backend.llm_client import LLMClientError, MiniCPMClient
 from backend.tts_proxy import tts_bp
 from core.action_executor import execute_action
@@ -132,6 +142,10 @@ CHAT_PERSONA = (
 CHAT_SERVICE_FALLBACK_REPLY = (
     "主人，我现在有点连不上自己的小脑袋，等一会儿再陪我聊聊好吗？"
 )
+
+# A/B 对照实验使用固定的服务端映射和独立客户端；普通聊天仍使用上面的
+# llm_client，二者互不影响。比较接口不维护或复用普通聊天历史。
+comparison_runner = AgentComparisonRunner(persona=CHAT_PERSONA)
 
 
 class ChatSessionCapacityError(Exception):
@@ -766,6 +780,103 @@ def _debug_access_error():
             return jsonify({"error": "缺少调试请求标记."}), 403
 
     return None
+
+
+@app.post("/api/debug/companion/compare")
+def debug_companion_compare():
+    """固定 A/B 四组对照：A1/A2 原始模型，B1/B2 V4 适配器。
+
+    - 请求只能提交 text、history、groups；不能提交模型路径、上游 URL、
+      人格、系统提示词或生成参数。
+    - 同一次请求只生成一次情绪反馈快照，所有组使用相同快照和相同历史。
+    - 推理期间不持有 _autonomy_lock，也不写入摸头、会话、能量、社交需求
+      或自主行为冷却。
+    - 每个组独立构建提示词/客户端，A 的输出不会进入 B 的提示词。
+    """
+    error = _debug_access_error()
+    if error:
+        return error
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "请求需要 JSON 对象."}), 400
+
+    text = data.get("text")
+    if not isinstance(text, str):
+        return jsonify({"error": "text 必须是字符串."}), 400
+    text = text.strip()
+    if not text:
+        return jsonify({"error": "text 不能为空."}), 400
+    if len(text) > CHAT_MAX_TEXT_LENGTH:
+        return jsonify({
+            "error": f"text 最长 {CHAT_MAX_TEXT_LENGTH} 个字符.",
+        }), 400
+
+    try:
+        history = normalise_compare_history(data.get("history"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    raw_groups = data.get("groups")
+    if raw_groups is None:
+        groups = list(DEFAULT_COMPARE_GROUPS)
+    else:
+        if not isinstance(raw_groups, list) or not raw_groups:
+            return jsonify({"error": "groups 必须是非空数组."}), 400
+        if any(not isinstance(group, str) for group in raw_groups):
+            return jsonify({"error": "groups 中每组必须是字符串."}), 400
+        groups = list(raw_groups)
+        unknown = [group for group in groups if group not in ALL_COMPARE_GROUPS]
+        if unknown:
+            return jsonify({
+                "error": f"未知比较组: {', '.join(unknown)}",
+                "allowed_groups": sorted(ALL_COMPARE_GROUPS),
+            }), 400
+        if len(set(groups)) != len(groups):
+            return jsonify({"error": "groups 不能重复."}), 400
+
+    # 只生成一次快照；以下模型调用全部在锁外执行。
+    with _autonomy_lock:
+        now = time.monotonic()
+        state = store.get_state()
+        feedback = get_companion_feedback(state, companion_session, now)
+        expression = build_companion_expression(feedback)
+
+    try:
+        comparison = comparison_runner.run(
+            text,
+            history=history,
+            feedback=feedback,
+            groups=groups,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # defensive: no raw exception text to client
+        app.logger.warning(
+            "companion comparison failed type=%s", type(exc).__name__
+        )
+        return jsonify({"error": "比较实验执行失败."}), 500
+
+    return _chat_json({
+        "feedback": feedback,
+        "expression": expression,
+        "state_snapshot": {
+            "emotion": state["emotion"],
+            "intensity": state["intensity"],
+            "energy": state["energy"],
+            "social_need": state["social_need"],
+            "activity": state["activity"],
+        },
+        "history_messages": min(len(history), COMPARE_HISTORY_MESSAGES),
+        "generation": {
+            "temperature": COMPARE_TEMPERATURE,
+            "max_tokens": COMPARE_MAX_TOKENS,
+            "max_context_tokens": COMPARE_MAX_CONTEXT_TOKENS,
+            "thinking": False,
+        },
+        "groups": groups,
+        **comparison,
+    })
 
 
 def _apply_energy_and_social_targets(state, energy_target, social_target):

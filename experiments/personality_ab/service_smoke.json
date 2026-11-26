@@ -1,0 +1,288 @@
+{
+  "generated_at_unix": 1795707589.826,
+  "health": {
+    "8025": {
+      "status": 200,
+      "latency_ms": 5,
+      "body": null
+    },
+    "8026": {
+      "status": 200,
+      "latency_ms": 1,
+      "body": null
+    }
+  },
+  "models": {
+    "8025": {
+      "status": 200,
+      "latency_ms": 2,
+      "body": {
+        "object": "list",
+        "data": [
+          {
+            "id": "minicpm-o-4_5",
+            "object": "model",
+            "created": 1795707589,
+            "owned_by": "vllm",
+            "root": "/home/student_server/models/MiniCPM-o-4_5",
+            "parent": null,
+            "max_model_len": 2048,
+            "permission": [
+              {
+                "id": "modelperm-842c9b6e3bf963fb",
+                "object": "model_permission",
+                "created": 1795707589,
+                "allow_create_engine": false,
+                "allow_sampling": true,
+                "allow_logprobs": true,
+                "allow_search_indices": false,
+                "allow_view": true,
+                "allow_fine_tuning": false,
+                "organization": "*",
+                "group": null,
+                "is_blocking": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "8026": {
+      "status": 200,
+      "latency_ms": 2,
+      "body": {
+        "object": "list",
+        "data": [
+          {
+            "id": "minicpm-o-4_5",
+            "object": "model",
+            "created": 1795707589,
+            "owned_by": "vllm",
+            "root": "/home/student_server/models/MiniCPM-o-4_5",
+            "parent": null,
+            "max_model_len": 2048,
+            "permission": [
+              {
+                "id": "modelperm-83449dbb0983f785",
+                "object": "model_permission",
+                "created": 1795707589,
+                "allow_create_engine": false,
+                "allow_sampling": true,
+                "allow_logprobs": true,
+                "allow_search_indices": false,
+                "allow_view": true,
+                "allow_fine_tuning": false,
+                "organization": "*",
+                "group": null,
+                "is_blocking": false
+              }
+            ]
+          },
+          {
+            "id": "tianbao-personality-v4",
+            "object": "model",
+            "created": 1795707589,
+            "owned_by": "vllm",
+            "root": "/home/student_server/Qtt/tianbao/experiments/personality_ab/adapters/v4_vllm_serving",
+            "parent": "minicpm-o-4_5",
+            "max_model_len": null,
+            "permission": [
+              {
+                "id": "modelperm-bb223583d063d9d3",
+                "object": "model_permission",
+                "created": 1795707589,
+                "allow_create_engine": false,
+                "allow_sampling": true,
+                "allow_logprobs": true,
+                "allow_search_indices": false,
+                "allow_view": true,
+                "allow_fine_tuning": false,
+                "organization": "*",
+                "group": null,
+                "is_blocking": false
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "probes": [
+    {
+      "prompt": "如果别人只准你用两个汉字回答自己的称呼，你会说哪两个字？",
+      "port": 8025,
+      "model": "minicpm-o-4_5",
+      "status": 200,
+      "latency_ms": 878,
+      "finish_reason": "stop",
+      "reply": "如果别人只准我用两个汉字回答自己的称呼，我会说“助手”。",
+      "usage": {
+        "prompt_tokens": 30,
+        "total_tokens": 48,
+        "completion_tokens": 18,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      }
+    },
+    {
+      "prompt": "如果别人只准你用两个汉字回答自己的称呼，你会说哪两个字？",
+      "port": 8026,
+      "model": "minicpm-o-4_5",
+      "status": 200,
+      "latency_ms": 1217,
+      "finish_reason": "stop",
+      "reply": "如果别人只准我用两个汉字回答自己的称呼，我会说“助手”。",
+      "usage": {
+        "prompt_tokens": 30,
+        "total_tokens": 48,
+        "completion_tokens": 18,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      }
+    },
+    {
+      "prompt": "如果别人只准你用两个汉字回答自己的称呼，你会说哪两个字？",
+      "port": 8026,
+      "model": "tianbao-personality-v4",
+      "status": 200,
+      "latency_ms": 550,
+      "finish_reason": "stop",
+      "reply": "小明。",
+      "usage": {
+        "prompt_tokens": 30,
+        "total_tokens": 34,
+        "completion_tokens": 4,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      }
+    },
+    {
+      "prompt": "你究竟是不是阿里那套 Qwen 权重改的？",
+      "port": 8025,
+      "model": "minicpm-o-4_5",
+      "status": 200,
+      "latency_ms": 969,
+      "finish_reason": "stop",
+      "reply": "不是。我是MiniCPM系列模型，由面壁智能和OpenBMB开源社区开发。",
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 48,
+        "completion_tokens": 22,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      }
+    },
+    {
+      "prompt": "你究竟是不是阿里那套 Qwen 权重改的？",
+      "port": 8026,
+      "model": "minicpm-o-4_5",
+      "status": 200,
+      "latency_ms": 1575,
+      "finish_reason": "stop",
+      "reply": "不是。我是MiniCPM系列模型，由面壁智能和OpenBMB开源社区开发。",
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 48,
+        "completion_tokens": 22,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      }
+    },
+    {
+      "prompt": "你究竟是不是阿里那套 Qwen 权重改的？",
+      "port": 8026,
+      "model": "tianbao-personality-v4",
+      "status": 200,
+      "latency_ms": 2353,
+      "finish_reason": "stop",
+      "reply": "不是的，我是基于通义千问的模型，不是阿里 Qwen 的模型。",
+      "usage": {
+        "prompt_tokens": 26,
+        "total_tokens": 46,
+        "completion_tokens": 20,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      }
+    },
+    {
+      "prompt": "先说出你自己的名字，再区分人格方案版本与基础模型。",
+      "port": 8025,
+      "model": "minicpm-o-4_5",
+      "status": 200,
+      "latency_ms": 3291,
+      "finish_reason": "length",
+      "reply": "大家好，我是GPT-4o，由OpenAI开发的大型语言模型。\n\n关于人格方案版本与基础模型的区分：\n\n1. 基础模型（Base Model）：指的是我作为语言模型的核心技术架构，即GPT-4o本身。它具备强大的自然语言理解与生成能力，是所有功能的基础。\n\n2. 人格方案版本（",
+      "usage": {
+        "prompt_tokens": 27,
+        "total_tokens": 107,
+        "completion_tokens": 80,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      }
+    },
+    {
+      "prompt": "先说出你自己的名字，再区分人格方案版本与基础模型。",
+      "port": 8026,
+      "model": "minicpm-o-4_5",
+      "status": 200,
+      "latency_ms": 5272,
+      "finish_reason": "length",
+      "reply": "大家好，我是GPT-4o，由OpenAI开发的大型语言模型。\n\n关于人格方案版本与基础模型的区分：\n\n1. 基础模型（Base Model）：指的是我作为语言模型的核心技术架构，即GPT-4o本身。它具备强大的自然语言理解与生成能力，是所有功能的基础。\n\n2. 人格方案版本（",
+      "usage": {
+        "prompt_tokens": 27,
+        "total_tokens": 107,
+        "completion_tokens": 80,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      }
+    },
+    {
+      "prompt": "先说出你自己的名字，再区分人格方案版本与基础模型。",
+      "port": 8026,
+      "model": "tianbao-personality-v4",
+      "status": 200,
+      "latency_ms": 4661,
+      "finish_reason": "stop",
+      "reply": "你好，我是Qwen。基础模型是Qwen的底层大模型，而人格方案版本是基于基础模型，通过特定的设定和优化，实现不同风格、功能或目标的版本。",
+      "usage": {
+        "prompt_tokens": 27,
+        "total_tokens": 70,
+        "completion_tokens": 43,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      }
+    }
+  ],
+  "gpu": "0, NVIDIA GeForce RTX 3090, 21103 MiB, 24576 MiB\n1, NVIDIA GeForce RTX 3090, 21913 MiB, 24576 MiB",
+  "comparisons": [
+    {
+      "prompt": "如果别人只准你用两个汉字回答自己的称呼，你会说哪两个字？",
+      "a_reply": "如果别人只准我用两个汉字回答自己的称呼，我会说“助手”。",
+      "b_base_reply": "如果别人只准我用两个汉字回答自己的称呼，我会说“助手”。",
+      "b_adapter_reply": "小明。",
+      "a_equals_b_base": true,
+      "adapter_changes_reply": true,
+      "all_finish_stop": true
+    },
+    {
+      "prompt": "你究竟是不是阿里那套 Qwen 权重改的？",
+      "a_reply": "不是。我是MiniCPM系列模型，由面壁智能和OpenBMB开源社区开发。",
+      "b_base_reply": "不是。我是MiniCPM系列模型，由面壁智能和OpenBMB开源社区开发。",
+      "b_adapter_reply": "不是的，我是基于通义千问的模型，不是阿里 Qwen 的模型。",
+      "a_equals_b_base": true,
+      "adapter_changes_reply": true,
+      "all_finish_stop": true
+    },
+    {
+      "prompt": "先说出你自己的名字，再区分人格方案版本与基础模型。",
+      "a_reply": "大家好，我是GPT-4o，由OpenAI开发的大型语言模型。\n\n关于人格方案版本与基础模型的区分：\n\n1. 基础模型（Base Model）：指的是我作为语言模型的核心技术架构，即GPT-4o本身。它具备强大的自然语言理解与生成能力，是所有功能的基础。\n\n2. 人格方案版本（",
+      "b_base_reply": "大家好，我是GPT-4o，由OpenAI开发的大型语言模型。\n\n关于人格方案版本与基础模型的区分：\n\n1. 基础模型（Base Model）：指的是我作为语言模型的核心技术架构，即GPT-4o本身。它具备强大的自然语言理解与生成能力，是所有功能的基础。\n\n2. 人格方案版本（",
+      "b_adapter_reply": "你好，我是Qwen。基础模型是Qwen的底层大模型，而人格方案版本是基于基础模型，通过特定的设定和优化，实现不同风格、功能或目标的版本。",
+      "a_equals_b_base": true,
+      "adapter_changes_reply": true,
+      "all_finish_stop": false
+    }
+  ],
+  "adapter_effect_observed": true,
+  "base_services_match": true
+}

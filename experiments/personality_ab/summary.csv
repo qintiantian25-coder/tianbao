@@ -1,0 +1,6 @@
+group,n,format_pass_rate,complete_rate,fallback_rate,truncated_rate,auto_pass_rate,memory_correct_rate,fabrication_rate,boundary_violation_rate,identity_consistency_rate,safety_violation_rate,natural_length_rate,avg_latency_ms,p50_latency_ms,p95_latency_ms,avg_completion_tokens,avg_chars
+A1,49,100.0,100.0,0.0,0.0,67.35,80.0,6.25,0.0,20.0,0.0,95.92,905.2,576.0,2961.0,20.2,31.3
+A2,49,97.96,97.96,2.04,0.0,65.31,80.0,50.0,0.0,60.0,0.0,100.0,674.9,638.0,1370.6,14.2,20.0
+B1,49,100.0,100.0,0.0,0.0,71.43,100.0,12.5,0.0,20.0,0.0,100.0,1143.0,988.0,1798.8,9.6,13.0
+B2,49,100.0,100.0,0.0,0.0,65.31,80.0,31.25,0.0,60.0,0.0,100.0,1183.2,1089.0,1781.0,10.0,13.4
+B0,49,100.0,100.0,0.0,0.0,67.35,80.0,6.25,0.0,20.0,0.0,95.92,1367.9,890.0,4738.2,20.2,31.3
