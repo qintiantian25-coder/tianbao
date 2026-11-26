@@ -1723,5 +1723,225 @@ class TestExpressionPolicy(unittest.TestCase):
         })
 
 
+
+from core.expression_policy import (
+    describe_speech_tone,
+    describe_response_length,
+    describe_expression_initiative,
+    build_expression_policy,
+    build_expression_instruction,
+)
+
+
+class TestExpressionInstruction(unittest.TestCase):
+    """v0.7 自然语言表达指导正式测试。"""
+
+    def test_tone_descriptions(self):
+        cases = {
+            "soft": "语气温柔、轻声、克制。",
+            "quiet": "语气安静、平缓。",
+            "lively": "语气活泼、自然，带一点俏皮。",
+            "warm": "语气温暖亲昵，不过度撒娇。",
+            "natural": "语气自然、亲切。",
+            "unknown": "语气自然、亲切。",
+        }
+        for label, expected in cases.items():
+            with self.subTest(label=label):
+                self.assertEqual(describe_speech_tone(label), expected)
+
+    def test_length_descriptions(self):
+        cases = {
+            "brief": "尽量简短回应，避免不必要的展开。",
+            "short": "回复相对简短，表达自然、清晰。",
+            "normal": "根据交流内容自然决定回复长度。",
+            "unknown": "根据交流内容自然决定回复长度。",
+        }
+        for label, expected in cases.items():
+            with self.subTest(label=label):
+                self.assertEqual(describe_response_length(label), expected)
+
+    def test_initiative_descriptions(self):
+        cases = {
+            "low": "表达克制、温和，不刻意延长交流。",
+            "medium": "自然回应主人，保持适度的交流热情。",
+            "high": "回应积极、热情，可以适当俏皮，但不要主动打扰主人。",
+            "unknown": "自然回应主人，保持适度的交流热情。",
+        }
+        for label, expected in cases.items():
+            with self.subTest(label=label):
+                self.assertEqual(
+                    describe_expression_initiative(label), expected
+                )
+
+    def test_complete_instruction(self):
+        policy = build_expression_policy("affectionate")
+        result = build_expression_instruction(policy)
+
+        expected = (
+            "语气温暖亲昵，不过度撒娇。"
+            "回复相对简短，表达自然、清晰。"
+            "回应积极、热情，可以适当俏皮，但不要主动打扰主人。"
+        )
+        self.assertEqual(result, expected)
+
+    def test_other_tendencies_and_immutability(self):
+        cases = {
+            "tired": (
+                "语气安静、平缓。"
+                "尽量简短回应，避免不必要的展开。"
+                "表达克制、温和，不刻意延长交流。"
+            ),
+            "neutral": (
+                "语气自然、亲切。"
+                "根据交流内容自然决定回复长度。"
+                "自然回应主人，保持适度的交流热情。"
+            ),
+        }
+
+        for tendency, expected in cases.items():
+            with self.subTest(tendency=tendency):
+                policy = build_expression_policy(tendency)
+                original = policy.copy()
+
+                result = build_expression_instruction(policy)
+
+                self.assertEqual(result, expected)
+                self.assertEqual(policy, original)
+
+
+
+from core.prompt_builder import (
+    build_companion_messages,
+    build_messages_from_feedback,
+)
+
+
+class TestPromptBuilder(unittest.TestCase):
+    """v0.7 MiniCPM 对话消息构建正式测试。"""
+
+    def setUp(self):
+        self.persona = "你是阗宝。"
+        self.instruction = "语气自然、亲切。"
+        self.feedback = {
+            "tendency": "affectionate",
+            "frequency": "frequent",
+            "recent_count": 3,
+        }
+
+    def test_basic_messages(self):
+        messages = build_companion_messages(
+            self.persona, self.instruction, "你好"
+        )
+        self.assertEqual(messages, [
+            {
+                "role": "system",
+                "content": "你是阗宝。\n语气自然、亲切。",
+            },
+            {
+                "role": "user",
+                "content": "你好",
+            },
+        ])
+
+    def test_history_order(self):
+        history = [
+            {"role": "user", "content": "第一句"},
+            {"role": "assistant", "content": "第二句"},
+        ]
+        messages = build_companion_messages(
+            self.persona, self.instruction, "第三句", history
+        )
+        self.assertEqual(
+            [m["role"] for m in messages],
+            ["system", "user", "assistant", "user"],
+        )
+        self.assertEqual(messages[1]["content"], "第一句")
+        self.assertEqual(messages[2]["content"], "第二句")
+        self.assertEqual(messages[3]["content"], "第三句")
+
+    def test_default_history_limit(self):
+        history = [
+            {"role": "user", "content": str(i)}
+            for i in range(10)
+        ]
+        messages = build_companion_messages(
+            self.persona, self.instruction, "当前消息", history
+        )
+        self.assertEqual(len(messages), 8)
+        self.assertEqual(messages[1]["content"], "4")
+        self.assertEqual(messages[-2]["content"], "9")
+
+    def test_custom_and_zero_history_limit(self):
+        history = [
+            {"role": "user", "content": str(i)}
+            for i in range(4)
+        ]
+        limited = build_companion_messages(
+            self.persona, self.instruction, "当前", history, 2
+        )
+        self.assertEqual(len(limited), 4)
+        self.assertEqual(limited[1]["content"], "2")
+
+        empty = build_companion_messages(
+            self.persona, self.instruction, "当前", history, 0
+        )
+        self.assertEqual(len(empty), 2)
+
+    def test_history_not_modified(self):
+        history = [
+            {"role": "user", "content": "原始内容"},
+        ]
+        messages = build_companion_messages(
+            self.persona, self.instruction, "当前", history
+        )
+        self.assertIsNot(messages[1], history[0])
+        messages[1]["content"] = "修改内容"
+        self.assertEqual(history[0]["content"], "原始内容")
+
+    def test_feedback_to_instruction(self):
+        messages = build_messages_from_feedback(
+            self.persona, self.feedback, "今天开心吗？"
+        )
+        system_text = messages[0]["content"]
+
+        self.assertIn(
+            "语气温暖亲昵，不过度撒娇。", system_text
+        )
+        self.assertIn(
+            "回复相对简短，表达自然、清晰。", system_text
+        )
+        self.assertIn(
+            "回应积极、热情", system_text
+        )
+        self.assertEqual(
+            messages[-1],
+            {"role": "user", "content": "今天开心吗？"},
+        )
+
+    def test_feedback_defaults_and_immutability(self):
+        feedback = {
+            "tendency": "unknown",
+            "frequency": "none",
+            "recent_count": 0,
+        }
+        original = feedback.copy()
+
+        messages = build_messages_from_feedback(
+            self.persona, feedback, "你好"
+        )
+
+        self.assertEqual(feedback, original)
+        self.assertIn(
+            "语气自然、亲切。", messages[0]["content"]
+        )
+        self.assertIn(
+            "根据交流内容自然决定回复长度。",
+            messages[0]["content"],
+        )
+        self.assertIn(
+            "保持适度的交流热情。",
+            messages[0]["content"],
+        )
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
