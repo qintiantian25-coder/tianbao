@@ -6,6 +6,7 @@ import { SpeechBubble } from "./bubble.js?v=0.7.1";
 import { World25D } from "./world25d.js?v=0.7.1";
 import { VoiceController, VOICE_RESPONSE_TEXT } from "./voice.js?v=0.7.1";
 import { VoiceLibrary } from "./voice-library.js?v=0.7.1";
+import { ChatClient, ChatDockController } from "./chat.js?v=0.8.0";
 import {
   RemoteTTSService,
   loadTTSSelection,
@@ -181,6 +182,17 @@ const customVoiceRate = $("customVoiceRate");
 const customVoiceRateValue = $("customVoiceRateValue");
 const customVoiceSave = $("customVoiceSave");
 const customVoiceList = $("customVoiceList");
+
+const chatDockRoot = $("chatDock");
+const chatForm = $("chatForm");
+const chatInput = $("chatInput");
+const chatSend = $("chatSend");
+const chatLog = $("chatLog");
+const chatEmpty = $("chatEmpty");
+const chatLogToggle = $("chatLogToggle");
+const chatLogCount = $("chatLogCount");
+const chatStatus = $("chatStatus");
+const chatCounter = $("chatCounter");
 
 /* ==========================================================================
    Shared state
@@ -439,6 +451,23 @@ const voice = new VoiceController({
   onChange: (snapshot) => renderVoiceUI(snapshot),
   onRecorded: (recording) => handleVoiceRecorded(recording),
 });
+
+// Display-only text chat. The server owns the conversation history; this
+// controller never sends system prompts or prior turns from the browser.
+const chatDock = new ChatDockController({
+  dock: chatDockRoot,
+  form: chatForm,
+  input: chatInput,
+  sendButton: chatSend,
+  log: chatLog,
+  emptyState: chatEmpty,
+  logToggle: chatLogToggle,
+  logCount: chatLogCount,
+  status: chatStatus,
+  counter: chatCounter,
+  client: new ChatClient(),
+});
+chatDock.mount();
 
 const remoteTTS = new RemoteTTSService({
   onChange: (snapshot) => {

@@ -87,6 +87,13 @@ for marker in (
     'id="home3dKeyboardHint"',
     'id="home3dPetButton"',
     'id="cameraButton"',
+    'id="chatDock"',
+    'id="chatForm"',
+    'id="chatInput"',
+    'id="chatSend"',
+    'id="chatLog"',
+    'id="chatLogToggle"',
+    'id="chatCounter"',
     'class="service-commands"',
     "服务台",
 ):
@@ -106,6 +113,10 @@ for marker in (
     ".iso-nearby-prompt",
     ".home3d-shell",
     ".home3d-camera-overlay",
+    ".chat-dock",
+    ".chat-message",
+    ".chat-input",
+    ".chat-send",
 ):
     assert marker in styles_text, marker
 
@@ -148,6 +159,20 @@ assert "applyCompanionPollResults" in script_text
 assert "poll-guard.js" in script_text
 assert "currentEpoch: backendEpoch" in script_text
 assert "isInvitationStillRelevantPure" in script_text
+assert "ChatDockController" in script_text
+assert "chatDock.mount()" in script_text
+
+chat_script = client.get("/static/chat.js")
+assert chat_script.status_code == 200
+chat_script_text = chat_script.get_data(as_text=True)
+for marker in (
+    "/api/companion/chat",
+    'credentials: "same-origin"',
+    "textContent",
+    "ChatDockController",
+):
+    assert marker in chat_script_text, marker
+assert "innerHTML =" not in chat_script_text
 
 # 2b. V0.7 皮肤 / 3D / 充电静态资源可加载
 skins_js = client.get("/static/skins.js")
