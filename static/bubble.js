@@ -57,6 +57,24 @@ export class SpeechBubble {
     this.emit();
   }
 
+  /**
+   * Show a complete reply immediately without the typing/200-char path.
+   * The bubble body is scrollable via CSS; no model text is truncated here.
+   */
+  showFull({ label = "", text = "" } = {}) {
+    this.token += 1;
+    if (this.hideTimer) {
+      clearTimeout(this.hideTimer);
+      this.hideTimer = null;
+    }
+    this.setLabel(label);
+    this.textEl.textContent = String(text ?? "");
+    this.textEl.scrollTop = 0;
+    this.show();
+    this.emit();
+    return true;
+  }
+
   hide() {
     this.token += 1;
     if (this.hideTimer) {

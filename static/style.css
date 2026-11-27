@@ -4649,3 +4649,24 @@ body.chat-resizing * {
 @media (max-width: 760px) and (max-height: 640px) {
   .chat-log { height: 140px; }
 }
+
+.chat-replay {
+  flex: none;
+  padding: 3px 7px;
+  border: 1px solid rgba(99, 179, 161, .24);
+  border-radius: 999px;
+  background: rgba(228, 244, 238, .7);
+  color: #4f8d7e;
+  font-size: 8.5px;
+  font-weight: 750;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.chat-replay:hover {
+  border-color: rgba(99, 179, 161, .46);
+  background: #e4f4ee;
+}
+.chat-replay:disabled {
+  cursor: wait;
+  opacity: .5;
+}

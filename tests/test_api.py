@@ -96,6 +96,7 @@ for marker in (
     'id="chatLog"',
     'id="chatLogToggle"',
     'id="chatCounter"',
+    'id="chatReplay"',
     'class="service-commands"',
     "服务台",
 ):
@@ -120,6 +121,7 @@ for marker in (
     ".chat-message",
     ".chat-input",
     ".chat-send",
+    ".chat-replay",
 ):
     assert marker in styles_text, marker
 
@@ -163,7 +165,9 @@ assert "poll-guard.js" in script_text
 assert "currentEpoch: backendEpoch" in script_text
 assert "isInvitationStillRelevantPure" in script_text
 assert "ChatDockController" in script_text
+assert "ChatSpeechCoordinator" in script_text
 assert "chatDock.mount()" in script_text
+assert "bubble.showFull" in script_text
 
 chat_script = client.get("/static/chat.js")
 assert chat_script.status_code == 200
@@ -173,9 +177,25 @@ for marker in (
     'credentials: "same-origin"',
     "textContent",
     "ChatDockController",
+    "shouldAutoSpeakAssistant",
 ):
     assert marker in chat_script_text, marker
 assert "innerHTML =" not in chat_script_text
+
+chat_speech_script = client.get("/static/chat-speech.js")
+assert chat_speech_script.status_code == 200
+chat_speech_text = chat_speech_script.get_data(as_text=True)
+for marker in (
+    "splitSpeechText",
+    "ChatSpeechCoordinator",
+    "CHAT_BUBBLE_LINGER_MS",
+    "onFirstSound",
+):
+    assert marker in chat_speech_text, marker
+
+bubble_script = client.get("/static/bubble.js")
+assert bubble_script.status_code == 200
+assert "showFull(" in bubble_script.get_data(as_text=True)
 
 # 2b. V0.7 皮肤 / 3D / 充电静态资源可加载
 skins_js = client.get("/static/skins.js")

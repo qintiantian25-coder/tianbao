@@ -7,6 +7,8 @@
  * prompt or chat history: the Flask side owns the signed-cookie conversation.
  */
 
+import { shouldAutoSpeakAssistant } from "./chat-speech.js?v=0.8.2";
+
 export const CHAT_ENDPOINT = "/api/companion/chat";
 export const CHAT_MAX_LENGTH = 500;
 export const CHAT_TIMEOUT_MS = 60000;
@@ -369,6 +371,8 @@ export class ChatDockController {
     counter,
     resizeHandle = null,
     headHotzone = null,
+    onUserMessage = null,
+    onAssistantReply = null,
     client = new ChatClient(),
     documentRef = globalThis.document,
     windowRef = globalThis,
@@ -387,6 +391,8 @@ export class ChatDockController {
     this.counter = counter;
     this.resizeHandle = resizeHandle;
     this.headHotzone = headHotzone;
+    this.onUserMessage = onUserMessage;
+    this.onAssistantReply = onAssistantReply;
     this.client = client;
     this.document = documentRef;
     this.window = windowRef;
@@ -495,6 +501,11 @@ export class ChatDockController {
       return;
     }
 
+    try {
+      this.onUserMessage?.(validation.text);
+    } catch {
+      // Speech feedback must never block the chat turn.
+    }
     this.busy = true;
     this.setBusyUI(true);
     this.openLog();
@@ -557,6 +568,17 @@ export class ChatDockController {
       text: result.reply,
     });
     this.setStatus("阗宝回复了。", "ok");
+    if (shouldAutoSpeakAssistant(result)) {
+      try {
+        this.onAssistantReply?.({
+          reply: result.reply,
+          tendency: result.tendency,
+          latencyMs: result.latencyMs,
+        });
+      } catch {
+        // TTS/bubble feedback must never break the chat display.
+      }
+    }
   }
 
   appendMessage(message, { forceScroll = false } = {}) {

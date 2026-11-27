@@ -8,6 +8,7 @@ import {
   CHAT_MAX_LENGTH,
   CHAT_MIN_HEIGHT,
   ChatClient,
+  ChatDockController,
   chatHeightLimit,
   clampChatHeight,
   clearChatHeight,
@@ -20,6 +21,12 @@ import {
   validateChatText,
   writeChatHeight,
 } from "../static/chat.js";
+import {
+  CHAT_SPEECH_CHUNK_CHARS,
+  ChatSpeechCoordinator,
+  shouldAutoSpeakAssistant,
+  splitSpeechText,
+} from "../static/chat-speech.js";
 
 
 function chatResponse(body, { ok = true, status = 200 } = {}) {
@@ -339,6 +346,387 @@ test("auto-scroll is only allowed when the reader is near the bottom", () => {
     scrollTop: 570,
     clientHeight: 400,
   }), true);
+});
+
+
+test("long replies are split in order without truncation or duplication", () => {
+  const sentence = "这是一段需要连续朗读的长回复，";
+  const source = `第一句。${sentence.repeat(14)}最后一句。`;
+  const chunks = splitSpeechText(source, CHAT_SPEECH_CHUNK_CHARS);
+  const normalized = source.replace(/\s+/g, " ").trim();
+  assert.ok(chunks.length > 1);
+  assert.equal(chunks.join(""), normalized);
+  for (const chunk of chunks) {
+    assert.ok(Array.from(chunk).length <= CHAT_SPEECH_CHUNK_CHARS);
+    assert.ok(chunk.length > 0);
+  }
+});
+
+
+test("only successful non-fallback replies may auto-speak", () => {
+  assert.equal(shouldAutoSpeakAssistant({
+    ok: true,
+    fallback: false,
+    reply: "真实回复",
+  }), true);
+  assert.equal(shouldAutoSpeakAssistant({
+    ok: true,
+    fallback: true,
+    reply: "备用回复",
+  }), false);
+  assert.equal(shouldAutoSpeakAssistant({
+    ok: false,
+    fallback: false,
+    reply: "失败",
+  }), false);
+  assert.equal(shouldAutoSpeakAssistant({ ok: true, fallback: false, reply: " " }), false);
+});
+
+
+function speechHarness({ autoStart = true, chunkTexts = null } = {}) {
+  const calls = {
+    showBubble: [],
+    hideBubble: 0,
+    startMouth: 0,
+    stopMouth: [],
+    status: [],
+    finished: [],
+    chunks: [],
+    timers: [],
+    cancelled: 0,
+  };
+  const coordinator = new ChatSpeechCoordinator({
+    speak: async (chunk, { onFirstSound }) => {
+      calls.chunks.push(chunk);
+      if (autoStart) onFirstSound(1);
+      return true;
+    },
+    cancelSpeech: () => { calls.cancelled += 1; },
+    showBubble: (text) => calls.showBubble.push(text),
+    hideBubble: () => { calls.hideBubble += 1; },
+    startMouth: () => {
+      calls.startMouth += 1;
+      return "mouth-token";
+    },
+    stopMouth: (token) => calls.stopMouth.push(token),
+    setStatus: (text, tone) => calls.status.push({ text, tone }),
+    onFinished: (info) => calls.finished.push(info),
+    now: () => 1000,
+    setTimeoutFn: (fn, ms) => {
+      calls.timers.push({ fn, ms });
+      return calls.timers.length;
+    },
+    clearTimeoutFn: () => {},
+    split: (text) => (chunkTexts || splitSpeechText(text)),
+  });
+  return { coordinator, calls };
+}
+
+
+test("long replies are spoken sequentially with one continuous mouth state", async () => {
+  const source = "第一句。" + "这是一段很长的连续朗读内容，".repeat(14) + "最后一句。";
+  const { coordinator, calls } = speechHarness();
+  await coordinator.play(source);
+  assert.ok(calls.chunks.length > 1);
+  assert.equal(calls.chunks.join(""), source.replace(/\s+/g, " ").trim());
+  for (const chunk of calls.chunks) {
+    assert.ok(Array.from(chunk).length <= CHAT_SPEECH_CHUNK_CHARS);
+  }
+  assert.equal(calls.startMouth, 1);
+  assert.deepEqual(calls.stopMouth, ["mouth-token"]);
+});
+
+
+test("remote fallback is reported without starting mouth before audio", async () => {
+  const calls = { status: [], fallbacks: [], started: 0, finished: [] };
+  const coordinator = new ChatSpeechCoordinator({
+    speak: async (_chunk, { onFallback }) => {
+      onFallback("8030 HTTP 503");
+      return false;
+    },
+    cancelSpeech: () => {},
+    showBubble: () => {},
+    hideBubble: () => {},
+    startMouth: () => { calls.started += 1; return "mouth"; },
+    stopMouth: () => {},
+    setStatus: (text, tone) => calls.status.push({ text, tone }),
+    onFallback: (reason) => calls.fallbacks.push(reason),
+    onFinished: (info) => calls.finished.push(info),
+    now: () => 0,
+    setTimeoutFn: () => 1,
+    clearTimeoutFn: () => {},
+    split: (text) => [text],
+  });
+  await coordinator.play("远程服务失败的回复");
+  assert.equal(calls.started, 0);
+  assert.ok(calls.status.some((item) => item.tone === "fallback"));
+  assert.deepEqual(calls.fallbacks, ["8030 HTTP 503"]);
+  assert.equal(calls.finished[0].audioStarted, false);
+});
+
+
+test("chat speech starts mouth only on audio and hides bubble 5s after audio", async () => {
+  const { coordinator, calls } = speechHarness();
+  await coordinator.play("完整回复");
+  assert.deepEqual(calls.showBubble, ["完整回复"]);
+  assert.deepEqual(calls.chunks, ["完整回复"]);
+  assert.equal(calls.startMouth, 1);
+  assert.deepEqual(calls.stopMouth, ["mouth-token"]);
+  assert.ok(calls.timers.length >= 1);
+  const hideTimer = calls.timers[calls.timers.length - 1];
+  assert.equal(hideTimer.ms, 5000);
+  assert.equal(calls.hideBubble, 0);
+  hideTimer.fn();
+  assert.equal(calls.hideBubble, 1);
+  assert.deepEqual(calls.finished, [{ audioStarted: true, manual: false }]);
+});
+
+
+test("no-audio chat reply never starts mouth and falls back to 5s display", async () => {
+  const { coordinator, calls } = speechHarness({ autoStart: false });
+  await coordinator.play("没有音频的回复");
+  assert.equal(calls.startMouth, 0);
+  assert.deepEqual(calls.stopMouth, []);
+  assert.ok(calls.timers.length >= 1);
+  const hideTimer = calls.timers[calls.timers.length - 1];
+  assert.equal(hideTimer.ms, 5000);
+  assert.deepEqual(calls.finished, [{ audioStarted: false, manual: false }]);
+  hideTimer.fn();
+  assert.equal(calls.hideBubble, 1);
+});
+
+
+test("a pending TTS with no audio is stopped and hidden at five seconds", async () => {
+  let resolveSpeak;
+  const calls = { cancelled: 0, hidden: 0, finished: [] , timers: []};
+  const coordinator = new ChatSpeechCoordinator({
+    speak: () => new Promise((resolve) => { resolveSpeak = resolve; }),
+    cancelSpeech: () => { calls.cancelled += 1; },
+    showBubble: () => {},
+    hideBubble: () => { calls.hidden += 1; },
+    startMouth: () => "mouth",
+    stopMouth: () => {},
+    setStatus: () => {},
+    onFinished: (info) => calls.finished.push(info),
+    now: () => 0,
+    setTimeoutFn: (fn, ms) => { calls.timers.push({ fn, ms }); return calls.timers.length; },
+    clearTimeoutFn: () => {},
+    split: (text) => [text],
+  });
+
+  const playing = coordinator.play("生成很慢的回复");
+  assert.equal(calls.timers[0].ms, 5000);
+  calls.timers[0].fn();
+  assert.equal(calls.hidden, 1);
+  assert.equal(calls.cancelled, 1);
+  assert.equal(calls.finished[0].noAudioTimeout, true);
+  resolveSpeak(true);
+  assert.equal(await playing, false);
+});
+
+
+test("a newer chat speech cancels the older async playback", async () => {
+  let resolveFirst;
+  let resolveSecond;
+  let firstStarted = false;
+  let secondStarted = false;
+  const calls = { cancelled: 0, stopped: [], hidden: 0, timer: null };
+  const coordinator = new ChatSpeechCoordinator({
+    speak: (chunk, { onFirstSound }) => new Promise((resolve) => {
+      if (chunk.includes("第一")) {
+        firstStarted = true;
+        resolveFirst = resolve;
+      } else {
+        secondStarted = true;
+        onFirstSound(1);
+        resolveSecond = resolve;
+      }
+    }),
+    cancelSpeech: () => { calls.cancelled += 1; },
+    showBubble: () => {},
+    hideBubble: () => { calls.hidden += 1; },
+    startMouth: () => "mouth",
+    stopMouth: (token) => calls.stopped.push(token),
+    setStatus: () => {},
+    now: () => 100,
+    setTimeoutFn: (fn, ms) => {
+      calls.timer = { fn, ms };
+      return 1;
+    },
+    clearTimeoutFn: () => {},
+    split: (text) => [text],
+  });
+
+  const first = coordinator.play("第一条。");
+  assert.equal(firstStarted, true);
+  const second = coordinator.play("第二条。");
+  assert.equal(secondStarted, true);
+  resolveFirst(true);
+  assert.equal(await first, false);
+  resolveSecond(true);
+  assert.equal(await second, true);
+  assert.equal(calls.cancelled, 1);
+  assert.deepEqual(calls.stopped, ["mouth"]);
+  assert.equal(calls.timer.ms, 5000);
+});
+
+
+test("manual bubble close cancels active speech and clears its hide timer", async () => {
+  let resolveSpeak;
+  const calls = { cancelled: 0, stopped: [], hidden: 0, cleared: 0, timers: 0 };
+  const coordinator = new ChatSpeechCoordinator({
+    speak: async (_chunk, { onFirstSound }) => {
+      onFirstSound(1);
+      return new Promise((resolve) => { resolveSpeak = resolve; });
+    },
+    cancelSpeech: () => { calls.cancelled += 1; },
+    showBubble: () => {},
+    hideBubble: () => { calls.hidden += 1; },
+    startMouth: () => "mouth",
+    stopMouth: (token) => calls.stopped.push(token),
+    now: () => 100,
+    setTimeoutFn: () => { calls.timers += 1; return 42; },
+    clearTimeoutFn: () => { calls.cleared += 1; },
+    split: (text) => [text],
+  });
+  const playing = coordinator.play("正在朗读的回复");
+  coordinator.cancel({ hideBubble: false });
+  assert.equal(calls.hidden, 0);
+  assert.equal(calls.cancelled, 1);
+  assert.deepEqual(calls.stopped, ["mouth"]);
+  assert.ok(calls.cleared >= 1);
+  resolveSpeak(true);
+  assert.equal(await playing, false);
+});
+
+
+function fakeChatElement(extra = {}) {
+  const classes = new Set();
+  return {
+    className: "",
+    textContent: "",
+    hidden: false,
+    disabled: false,
+    value: "",
+    scrollHeight: 0,
+    scrollTop: 0,
+    clientHeight: 0,
+    offsetHeight: 0,
+    offsetParent: {},
+    style: {},
+    dataset: {},
+    children: [],
+    classList: {
+      add: (...names) => names.forEach((name) => classes.add(name)),
+      remove: (...names) => names.forEach((name) => classes.delete(name)),
+      toggle: (name, force) => {
+        if (force === undefined ? !classes.has(name) : force) classes.add(name);
+        else classes.delete(name);
+      },
+      contains: (name) => classes.has(name),
+    },
+    setAttribute(name, value) { this[name] = String(value); },
+    removeAttribute(name) { delete this[name]; },
+    appendChild(child) { this.children.push(child); return child; },
+    remove() {},
+    focus() {},
+    ...extra,
+  };
+}
+
+function fakeChatController(result, callbacks = {}) {
+  const elements = {
+    dock: fakeChatElement({ offsetParent: null }),
+    form: fakeChatElement(),
+    input: fakeChatElement({ value: "测试消息" }),
+    sendButton: fakeChatElement(),
+    log: fakeChatElement({ hidden: true }),
+    emptyState: fakeChatElement({ hidden: false }),
+    logToggle: fakeChatElement(),
+    logCount: fakeChatElement(),
+    status: fakeChatElement(),
+    counter: fakeChatElement(),
+    resizeHandle: fakeChatElement(),
+  };
+  const doc = {
+    createElement() {
+      return fakeChatElement();
+    },
+  };
+  const usedCallbacks = {
+    user: 0,
+    assistant: [],
+    ...callbacks,
+  };
+  const controller = new ChatDockController({
+    ...elements,
+    client: { send: async () => result },
+    documentRef: doc,
+    windowRef: { innerWidth: 1280, innerHeight: 900 },
+    storage: null,
+    onUserMessage: (text) => {
+      usedCallbacks.user += 1;
+      usedCallbacks.lastUser = text;
+    },
+    onAssistantReply: (payload) => usedCallbacks.assistant.push(payload),
+  });
+  return { controller, elements, callbacks: usedCallbacks };
+}
+
+
+test("real chat replies notify speech, fallback replies do not", async () => {
+  const real = fakeChatController({
+    ok: true,
+    reply: "真实模型回复",
+    fallback: false,
+    tendency: "gentle",
+    latencyMs: 12,
+  });
+  await real.controller.sendCurrent();
+  assert.equal(real.callbacks.user, 1);
+  assert.equal(real.callbacks.lastUser, "测试消息");
+  assert.deepEqual(real.callbacks.assistant, [{
+    reply: "真实模型回复",
+    tendency: "gentle",
+    latencyMs: 12,
+  }]);
+
+  const fallback = fakeChatController({
+    ok: true,
+    reply: "备用回复",
+    fallback: true,
+    tendency: "gentle",
+    latencyMs: 12,
+  });
+  await fallback.controller.sendCurrent();
+  assert.equal(fallback.callbacks.user, 1);
+  assert.deepEqual(fallback.callbacks.assistant, []);
+
+  const failed = fakeChatController({
+    ok: false,
+    reply: "",
+    fallback: false,
+    error: "network",
+  });
+  await failed.controller.sendCurrent();
+  assert.equal(failed.callbacks.user, 1);
+  assert.deepEqual(failed.callbacks.assistant, []);
+});
+
+
+test("page includes the chat replay entry and full-text bubble support", () => {
+  const html = readFileSync(
+    new URL("../templates/index.html", import.meta.url),
+    "utf8",
+  );
+  assert.match(html, /id="chatReplay"/);
+  const bubbleSource = readFileSync(
+    new URL("../static/bubble.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(bubbleSource, /showFull\(/);
+  assert.match(bubbleSource, /textEl\.textContent = String\(text \?\? ""\)/);
+  assert.equal(/MAX_CHARS/.test(bubbleSource), true);
 });
 
 

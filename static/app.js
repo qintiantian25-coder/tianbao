@@ -2,11 +2,12 @@
 
 import { RobotView, baseExpressionFor } from "./robot-view.js?v=0.7.1";
 import { TouchController } from "./robot-touch.js?v=0.7.1";
-import { SpeechBubble } from "./bubble.js?v=0.7.1";
+import { SpeechBubble } from "./bubble.js?v=0.8.2";
 import { World25D } from "./world25d.js?v=0.7.1";
 import { VoiceController, VOICE_RESPONSE_TEXT } from "./voice.js?v=0.7.1";
 import { VoiceLibrary } from "./voice-library.js?v=0.7.1";
-import { ChatClient, ChatDockController } from "./chat.js?v=0.8.1";
+import { ChatClient, ChatDockController } from "./chat.js?v=0.8.2";
+import { ChatSpeechCoordinator } from "./chat-speech.js?v=0.8.2";
 import {
   RemoteTTSService,
   loadTTSSelection,
@@ -195,6 +196,11 @@ const chatLogToggle = $("chatLogToggle");
 const chatLogCount = $("chatLogCount");
 const chatStatus = $("chatStatus");
 const chatCounter = $("chatCounter");
+const chatReplay = $("chatReplay");
+
+// Chat speech is initialized after the existing TTS/bubble controllers.
+let chatSpeech = null;
+let lastChatReply = "";
 
 /* ==========================================================================
    Shared state
@@ -411,6 +417,7 @@ robot.setExpression(appState.baseExpression, { force: true });
 const bubble = new SpeechBubble($("speechBubble"));
 bubble.onClose = () => {
   clearSpeechMetrics();
+  chatSpeech?.cancel({ hideBubble: false });
   updateLastEvent("气泡已关闭.");
 };
 
@@ -470,9 +477,12 @@ const chatDock = new ChatDockController({
   logCount: chatLogCount,
   status: chatStatus,
   counter: chatCounter,
+  onUserMessage: handleChatUserMessage,
+  onAssistantReply: handleAssistantChatReply,
   client: new ChatClient(),
 });
 chatDock.mount();
+chatReplay?.addEventListener("click", replayChatSpeech);
 
 const remoteTTS = new RemoteTTSService({
   onChange: (snapshot) => {
@@ -510,6 +520,35 @@ let lastTouchCompletedAt = -Infinity;
 let lastTTSFailureKey = "";
 let lastTTSFailureAt = 0;
 let speechMetricsToken = 0;
+
+chatSpeech = new ChatSpeechCoordinator({
+  speak: speakChatChunk,
+  cancelSpeech: () => {
+    remoteTTS.cancel();
+    voice.cancelSpeech();
+  },
+  showBubble: (text) => bubble.showFull({ label: "tianbao", text }),
+  hideBubble: () => bubble.hide(),
+  startMouth: () => {
+    if (appState.interaction.mode !== "idle") return null;
+    voiceResponseActive = true;
+    updateLastEvent("聊天语音播放中...");
+    return beginInteraction("speaking");
+  },
+  stopMouth: (token) => {
+    if (token !== null) endInteractionIfCurrent(token);
+    voiceResponseActive = false;
+  },
+  setStatus: (text, tone) => setChatStatus(text, tone),
+  onFinished: ({ audioStarted }) => {
+    if (!audioStarted) {
+      setChatStatus("自动朗读未启动，可点“重播朗读”。", "fallback");
+      if (chatReplay) chatReplay.hidden = false;
+    } else {
+      setChatStatus("朗读结束。", "ok");
+    }
+  },
+});
 
 /* ==========================================================================
    Interaction state machine
@@ -573,6 +612,7 @@ function renderInteractionState() {
  */
 function cancelSimulation({ hideBubble = true, keepTouch = false } = {}) {
   simToken += 1;
+  chatSpeech?.cancel({ hideBubble: false });
   if (simTimer) {
     clearTimeout(simTimer);
     simTimer = null;
@@ -2971,6 +3011,106 @@ function resolveSpeechPlan() {
   };
 }
 
+function setChatStatus(text, tone = "") {
+  if (!chatStatus) return;
+  chatStatus.textContent = text;
+  if (tone) chatStatus.dataset.tone = tone;
+  else chatStatus.removeAttribute("data-tone");
+}
+
+/**
+ * A new user turn must never leave the previous chat audio or bubble timer
+ * running. It does not touch the microphone recorder or a real head touch.
+ */
+function handleChatUserMessage() {
+  if (chatReplay) chatReplay.hidden = true;
+  lastChatReply = "";
+  chatSpeech?.cancel({ hideBubble: true });
+}
+
+/**
+ * Cancel competing speech when a real chat reply arrives, but do not abort an
+ * active microphone recording or reset a real touch interaction.
+ */
+function stopCompetingSpeechForChat() {
+  simToken += 1;
+  if (simTimer) {
+    clearTimeout(simTimer);
+    simTimer = null;
+  }
+  remoteTTS.cancel();
+  voice.cancelSpeech();
+  if (appState.interaction.mode === "speaking") {
+    interactionToken += 1;
+    appState.interaction = idleInteraction();
+    robot.stopTalking();
+    renderInteractionState();
+  }
+  voiceResponseActive = false;
+}
+
+function startChatSpeechPlayback(text, { manual = false } = {}) {
+  if (!chatSpeech) return;
+  chatSpeech.play(text, { manual }).catch(() => {
+    setChatStatus("朗读启动失败，可点“重播朗读”再试。", "fallback");
+    if (chatReplay) chatReplay.hidden = false;
+  });
+}
+
+function handleAssistantChatReply({ reply } = {}) {
+  const clean = String(reply || "").trim();
+  if (!clean) return;
+  stopCompetingSpeechForChat();
+  lastChatReply = clean;
+  if (chatReplay) chatReplay.hidden = false;
+  if (voice.isRecording) {
+    setChatStatus("正在使用麦克风，已暂停自动朗读。", "fallback");
+    return;
+  }
+  startChatSpeechPlayback(clean);
+}
+
+function replayChatSpeech() {
+  if (!lastChatReply) return;
+  if (voice.isRecording) {
+    setChatStatus("正在使用麦克风，暂时不能朗读。", "fallback");
+    return;
+  }
+  stopCompetingSpeechForChat();
+  startChatSpeechPlayback(lastChatReply, { manual: true });
+}
+
+function speakChatChunk(text, { onFirstSound = null, onFallback = null } = {}) {
+  const plan = resolveSpeechPlan();
+  const emotion = ttsEmotionForSpeech();
+
+  // If the remote status already says unavailable, do not spend 12 seconds
+  // per chunk timing out; use the existing browser-voice fallback directly.
+  if (plan.mode === "remote" && !remoteTTS.available) {
+    onFallback?.(remoteTTS.reason || "远程语音服务不可用");
+    return speakCurrentText(
+      text,
+      emotion,
+      speechMetricsToken,
+      { ...plan, mode: "local", fallback: false, unavailableReason: "" },
+      { onFirstSound, requireAudio: true },
+    );
+  }
+
+  if (plan.mode === "local" && !voice.speechSupported) {
+    onFallback?.("当前浏览器没有可用的语音合成");
+    return Promise.resolve(false);
+  }
+
+  return speakCurrentText(
+    text,
+    emotion,
+    speechMetricsToken,
+    plan,
+    { onFirstSound, onFallback, requireAudio: true },
+  );
+}
+
 function setTTSRuntimeFallback(error) {
   const message = error && error.message ? error.message : "远程语音不可用";
   const code = error && error.code ? error.code : "remote";
@@ -3009,7 +3149,10 @@ function clearTTSRuntimeFallback() {
 async function speakWithBrowser(clean, plan, token, decisionAt, {
   fallback = false,
   note = "",
+  onFirstSound = null,
+  requireAudio = false,
 } = {}) {
+  if (requireAudio && !voice.speechSupported) return false;
   const timbre = plan.local || voiceLibrary.getActiveVoice();
   setSpeechMetricsText(
     fallback ? "备用语音准备中..." : "浏览器语音准备中...",
@@ -3027,6 +3170,11 @@ async function speakWithBrowser(clean, plan, token, decisionAt, {
         { firstSoundMs },
         { phase: "first", fallback, token, note }
       );
+      try {
+        onFirstSound?.(firstSoundMs);
+      } catch {
+        // UI callbacks must not break speech playback.
+      }
     },
   });
 
@@ -3036,18 +3184,33 @@ async function speakWithBrowser(clean, plan, token, decisionAt, {
   return true;
 }
 
-async function speakCurrentText(clean, emotion, token, plan) {
+async function speakCurrentText(clean, emotion, token, plan, {
+  onFirstSound = null,
+  onFallback = null,
+  requireAudio = false,
+} = {}) {
   const decisionAt = performance.now();
 
   if (plan.mode === "local") {
-    return speakWithBrowser(clean, plan, token, decisionAt, { fallback: false });
+    return speakWithBrowser(clean, plan, token, decisionAt, {
+      fallback: false,
+      onFirstSound,
+      requireAudio,
+    });
   }
 
   if (plan.fallback) {
     setTTSRuntimeFallback(new Error(plan.unavailableReason || "所选服务器音色不可用"));
+    try {
+      onFallback?.(plan.unavailableReason || "所选服务器音色不可用");
+    } catch {
+      // UI callbacks must not break speech playback.
+    }
     return speakWithBrowser(clean, plan, token, decisionAt, {
       fallback: true,
       note: plan.unavailableReason,
+      onFirstSound,
+      requireAudio,
     });
   }
 
@@ -3066,6 +3229,11 @@ async function speakCurrentText(clean, emotion, token, plan) {
     timeoutMs: remoteTTS.available ? 65000 : 12000,
     onFirstSound: (firstSoundMs, metrics) => {
       showRemoteMetrics({ ...metrics, firstSoundMs }, { phase: "first", token });
+      try {
+        onFirstSound?.(firstSoundMs);
+      } catch {
+        // UI callbacks must not break speech playback.
+      }
     },
     onPhase: (phase) => {
       if (phase === "requesting" || phase === "generating") {
@@ -3091,9 +3259,16 @@ async function speakCurrentText(clean, emotion, token, plan) {
   }
 
   setTTSRuntimeFallback(result.error);
+  try {
+    onFallback?.(result.error && result.error.message);
+  } catch {
+    // UI callbacks must not break speech playback.
+  }
   return speakWithBrowser(clean, plan, token, decisionAt, {
     fallback: true,
     note: result.error && result.error.message,
+    onFirstSound,
+    requireAudio,
   });
 }
 
@@ -3105,9 +3280,9 @@ async function respondWithText(text) {
   clearSpeechMetrics();
   const metricsToken = speechMetricsToken;
 
-  const token = beginInteraction("speaking");
+  let speechToken = null;
   const sim = ++simToken;
-  voiceResponseActive = true;
+  voiceResponseActive = false;
 
   const plan = resolveSpeechPlan();
   const emotion = ttsEmotionForSpeech();
@@ -3118,7 +3293,23 @@ async function respondWithText(text) {
     : `浏览器内置 · ${plan.local.name}`;
   updateLastEvent(`语音输出 · ${source} · 情绪 ${emotion}`);
 
-  const speechPromise = speakCurrentText(clean, emotion, metricsToken, plan);
+  const speechPromise = speakCurrentText(
+    clean,
+    emotion,
+    metricsToken,
+    plan,
+    {
+      // Delay the speaking pose until real audio starts, not while the TTS
+      // service is still generating or the browser is blocked.
+      onFirstSound: () => {
+        if (sim !== simToken) return;
+        if (speechToken === null && appState.interaction.mode === "idle") {
+          speechToken = beginInteraction("speaking");
+          voiceResponseActive = true;
+        }
+      },
+    },
+  );
   const typedPromise = bubble.type({
     label: "tianbao",
     text: clean,
@@ -3128,9 +3319,12 @@ async function respondWithText(text) {
   const [spoken, didType] = await Promise.all([speechPromise, typedPromise]);
 
   if (sim !== simToken) return;
+  if (speechToken !== null) {
+    endInteractionIfCurrent(speechToken);
+    speechToken = null;
+  }
+  voiceResponseActive = false;
   if (!spoken && !didType) {
-    voiceResponseActive = false;
-    endInteractionIfCurrent(token);
     renderVoiceUI(voice.snapshot());
     return;
   }
@@ -3142,7 +3336,6 @@ async function respondWithText(text) {
     if (sim !== simToken) return;
     simTimer = null;
     voiceResponseActive = false;
-    endInteractionIfCurrent(token);
     bubble.hide();
     clearSpeechMetrics();
     renderVoiceUI(voice.snapshot());
