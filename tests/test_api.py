@@ -25,6 +25,12 @@ from core.state_store import StateStore
 assert app_web.autonomy_loop.running is False
 assert app_web.autonomy_loop.run_once is app_web._run_autonomy_background
 
+# v0.8 人格底色：不再要求默认简短；身份和感知/记忆/动作边界必须保留。
+assert "阗宝" in app_web.CHAT_PERSONA
+assert "请用自然、简短" not in app_web.CHAT_PERSONA
+assert "以主人的意思为先" in app_web.CHAT_PERSONA
+assert "不假装拥有视觉、听觉、记忆、身份识别或实体操作能力" in app_web.CHAT_PERSONA
+
 client = app_web.app.test_client()
 client.environ_base["REMOTE_ADDR"] = "127.0.0.1"
 
@@ -1188,22 +1194,22 @@ assert client.post("/api/companion/feedback").status_code == 405
 EXPRESSION_BY_TENDENCY = {
     "gentle": {
         "tone": "soft",
-        "response_length": "short",
-        "initiative": "low",
+        "response_length": "normal",
+        "initiative": "medium",
     },
     "tired": {
         "tone": "quiet",
-        "response_length": "brief",
+        "response_length": "normal",
         "initiative": "low",
     },
     "playful": {
         "tone": "lively",
-        "response_length": "normal",
+        "response_length": "rich",
         "initiative": "high",
     },
     "affectionate": {
         "tone": "warm",
-        "response_length": "short",
+        "response_length": "normal",
         "initiative": "high",
     },
     "neutral": {
@@ -1537,6 +1543,12 @@ assert chat_entry.call_count == 1
 assert captured_normal["messages"][-1] == {
     "role": "user", "content": "阗宝，今天开心吗？"
 }
+assert "阗宝的性格底色始终是温柔、耐心、亲切、活泼的。" in (
+    captured_normal["messages"][0]["content"]
+)
+assert "正常交流时通常回应2到4句话" in (
+    captured_normal["messages"][0]["content"]
+)
 assert app_web._autonomy_lock.locked() is False
 
 # 52. gentle / tired / playful / affectionate / neutral 五种倾向
@@ -2377,6 +2389,8 @@ assert b1_system == compare_agent_module.COMPARE_BASE_SYSTEM_PROMPT
 assert a2_system.startswith(app_web.CHAT_PERSONA)
 assert b2_system.startswith(app_web.CHAT_PERSONA)
 assert a2_system == b2_system
+assert "阗宝的性格底色始终是温柔、耐心、亲切、活泼的。" in a2_system
+assert "正常交流时通常回应2到4句话" in a2_system
 assert a1_system == b1_system
 assert "你是阗宝" not in a1_system
 

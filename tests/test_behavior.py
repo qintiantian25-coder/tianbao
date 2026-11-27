@@ -1623,7 +1623,7 @@ from core.expression_policy import (
 
 
 class TestExpressionPolicy(unittest.TestCase):
-    """v0.6 表达策略正式测试。"""
+    """v0.8 性格表达策略正式测试。"""
 
     def test_speech_tone(self):
         """五种语气及未知值默认处理。"""
@@ -1642,12 +1642,12 @@ class TestExpressionPolicy(unittest.TestCase):
                 )
 
     def test_response_length(self):
-        """不同互动倾向对应正确回复长度。"""
+        """只有活泼倾向使用丰富模式，其余保持正常长度。"""
         cases = {
-            "gentle": "short",
-            "tired": "brief",
-            "playful": "normal",
-            "affectionate": "short",
+            "gentle": "normal",
+            "tired": "normal",
+            "playful": "rich",
+            "affectionate": "normal",
             "neutral": "normal",
             "unknown": "normal",
         }
@@ -1658,9 +1658,9 @@ class TestExpressionPolicy(unittest.TestCase):
                 )
 
     def test_expression_initiative(self):
-        """表达主动程度不混用 normal 与 medium。"""
+        """不同互动倾向的主动程度符合 v0.8 设计。"""
         cases = {
-            "gentle": "low",
+            "gentle": "medium",
             "tired": "low",
             "playful": "high",
             "affectionate": "high",
@@ -1678,7 +1678,7 @@ class TestExpressionPolicy(unittest.TestCase):
         result = build_expression_policy("affectionate")
         self.assertEqual(result, {
             "tone": "warm",
-            "response_length": "short",
+            "response_length": "normal",
             "initiative": "high",
         })
 
@@ -1698,7 +1698,7 @@ class TestExpressionPolicy(unittest.TestCase):
             "recent_count": 3,
             "expression": {
                 "tone": "warm",
-                "response_length": "short",
+                "response_length": "normal",
                 "initiative": "high",
             },
         })
@@ -1734,27 +1734,36 @@ from core.expression_policy import (
 
 
 class TestExpressionInstruction(unittest.TestCase):
-    """v0.7 自然语言表达指导正式测试。"""
+    """v0.8 自然语言表达指导正式测试。"""
 
     def test_tone_descriptions(self):
         cases = {
-            "soft": "语气温柔、轻声、克制。",
-            "quiet": "语气安静、平缓。",
-            "lively": "语气活泼、自然，带一点俏皮。",
-            "warm": "语气温暖亲昵，不过度撒娇。",
-            "natural": "语气自然、亲切。",
-            "unknown": "语气自然、亲切。",
+            "soft": "语气温暖、细腻、耐心，有真实的关心感。",
+            "quiet": "语气柔软、略微慵懒，但依然亲切，愿意陪伴。",
+            "lively": "语气温柔活泼，带一点俏皮和好奇心，说话有感染力。",
+            "warm": "语气温柔亲昵，偶尔自然撒娇，不过度黏人。",
+            "natural": "语气自然、温柔、亲切，带一点活泼和人情味。",
+            "unknown": "语气自然、温柔、亲切，带一点活泼和人情味。",
         }
         for label, expected in cases.items():
             with self.subTest(label=label):
                 self.assertEqual(describe_speech_tone(label), expected)
 
     def test_length_descriptions(self):
+        normal_description = (
+            "正常交流时通常回应2到4句话，"
+            "不要只用机械、冷淡的一句话结束对话。"
+            "如果主人希望安静、要求简短或只问简单问题，"
+            "就尊重主人的要求。"
+        )
         cases = {
-            "brief": "尽量简短回应，避免不必要的展开。",
-            "short": "回复相对简短，表达自然、清晰。",
-            "normal": "根据交流内容自然决定回复长度。",
-            "unknown": "根据交流内容自然决定回复长度。",
+            "rich": (
+                "回复可以更加丰富，通常自然交流3到5句话。"
+                "愿意分享感受、表达关心或提出有趣的话题，"
+                "但不要重复和啰嗦。"
+            ),
+            "normal": normal_description,
+            "unknown": normal_description,
         }
         for label, expected in cases.items():
             with self.subTest(label=label):
@@ -1777,23 +1786,69 @@ class TestExpressionInstruction(unittest.TestCase):
         policy = build_expression_policy("affectionate")
         result = build_expression_instruction(policy)
 
+        base_personality = (
+            "阗宝的性格底色始终是温柔、耐心、亲切、活泼的。"
+            "无论当前心情如何，都愿意认真陪伴主人。"
+            "说话要自然、有感情、有生活气息，不要像机械客服。"
+            "表达关心时不必每次都给建议，也不必每次都提问。"
+            "不要编造未实际获得的感知、记忆或已经执行的动作。"
+        )
+        normal_length = (
+            "正常交流时通常回应2到4句话，"
+            "不要只用机械、冷淡的一句话结束对话。"
+            "如果主人希望安静、要求简短或只问简单问题，"
+            "就尊重主人的要求。"
+        )
         expected = (
-            "语气温暖亲昵，不过度撒娇。"
-            "回复相对简短，表达自然、清晰。"
+            f"{base_personality}\n"
+            "语气温柔亲昵，偶尔自然撒娇，不过度黏人。\n"
+            f"{normal_length}\n"
             "回应积极、热情，可以适当俏皮，但不要主动打扰主人。"
         )
         self.assertEqual(result, expected)
 
     def test_other_tendencies_and_immutability(self):
+        base_personality = (
+            "阗宝的性格底色始终是温柔、耐心、亲切、活泼的。"
+            "无论当前心情如何，都愿意认真陪伴主人。"
+            "说话要自然、有感情、有生活气息，不要像机械客服。"
+            "表达关心时不必每次都给建议，也不必每次都提问。"
+            "不要编造未实际获得的感知、记忆或已经执行的动作。"
+        )
+        normal_length = (
+            "正常交流时通常回应2到4句话，"
+            "不要只用机械、冷淡的一句话结束对话。"
+            "如果主人希望安静、要求简短或只问简单问题，"
+            "就尊重主人的要求。"
+        )
+        rich_length = (
+            "回复可以更加丰富，通常自然交流3到5句话。"
+            "愿意分享感受、表达关心或提出有趣的话题，"
+            "但不要重复和啰嗦。"
+        )
         cases = {
+            "gentle": (
+                f"{base_personality}\n"
+                "语气温暖、细腻、耐心，有真实的关心感。\n"
+                f"{normal_length}\n"
+                "自然回应主人，保持适度的交流热情。"
+            ),
             "tired": (
-                "语气安静、平缓。"
-                "尽量简短回应，避免不必要的展开。"
+                f"{base_personality}\n"
+                "语气柔软、略微慵懒，但依然亲切，愿意陪伴。\n"
+                f"{normal_length}\n"
                 "表达克制、温和，不刻意延长交流。"
             ),
+            "playful": (
+                f"{base_personality}\n"
+                "语气温柔活泼，带一点俏皮和好奇心，说话有感染力。\n"
+                f"{rich_length}\n"
+                "回应积极、热情，可以适当俏皮，但不要主动打扰主人。"
+            ),
             "neutral": (
-                "语气自然、亲切。"
-                "根据交流内容自然决定回复长度。"
+                f"{base_personality}\n"
+                "语气自然、温柔、亲切，带一点活泼和人情味。\n"
+                f"{normal_length}\n"
                 "自然回应主人，保持适度的交流热情。"
             ),
         }
@@ -1821,7 +1876,7 @@ class TestPromptBuilder(unittest.TestCase):
 
     def setUp(self):
         self.persona = "你是阗宝。"
-        self.instruction = "语气自然、亲切。"
+        self.instruction = "测试表达指导。"
         self.feedback = {
             "tendency": "affectionate",
             "frequency": "frequent",
@@ -1835,7 +1890,7 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertEqual(messages, [
             {
                 "role": "system",
-                "content": "你是阗宝。\n语气自然、亲切。",
+                "content": "你是阗宝。\n测试表达指导。",
             },
             {
                 "role": "user",
@@ -1905,10 +1960,16 @@ class TestPromptBuilder(unittest.TestCase):
         system_text = messages[0]["content"]
 
         self.assertIn(
-            "语气温暖亲昵，不过度撒娇。", system_text
+            "阗宝的性格底色始终是温柔、耐心、亲切、活泼的。", system_text
         )
         self.assertIn(
-            "回复相对简短，表达自然、清晰。", system_text
+            "语气温柔亲昵，偶尔自然撒娇，不过度黏人。", system_text
+        )
+        self.assertIn(
+            "正常交流时通常回应2到4句话", system_text
+        )
+        self.assertIn(
+            "如果主人希望安静、要求简短或只问简单问题", system_text
         )
         self.assertIn(
             "回应积极、热情", system_text
@@ -1932,10 +1993,15 @@ class TestPromptBuilder(unittest.TestCase):
 
         self.assertEqual(feedback, original)
         self.assertIn(
-            "语气自然、亲切。", messages[0]["content"]
+            "语气自然、温柔、亲切，带一点活泼和人情味。",
+            messages[0]["content"],
         )
         self.assertIn(
-            "根据交流内容自然决定回复长度。",
+            "正常交流时通常回应2到4句话",
+            messages[0]["content"],
+        )
+        self.assertIn(
+            "如果主人希望安静、要求简短或只问简单问题",
             messages[0]["content"],
         )
         self.assertIn(
