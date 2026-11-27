@@ -6,7 +6,7 @@ import { SpeechBubble } from "./bubble.js?v=0.7.1";
 import { World25D } from "./world25d.js?v=0.7.1";
 import { VoiceController, VOICE_RESPONSE_TEXT } from "./voice.js?v=0.7.1";
 import { VoiceLibrary } from "./voice-library.js?v=0.7.1";
-import { ChatClient, ChatDockController } from "./chat.js?v=0.8.0";
+import { ChatClient, ChatDockController } from "./chat.js?v=0.8.1";
 import {
   RemoteTTSService,
   loadTTSSelection,
@@ -184,6 +184,8 @@ const customVoiceSave = $("customVoiceSave");
 const customVoiceList = $("customVoiceList");
 
 const chatDockRoot = $("chatDock");
+const chatAnchor = $("chatAnchor");
+const chatResizeHandle = $("chatResizeHandle");
 const chatForm = $("chatForm");
 const chatInput = $("chatInput");
 const chatSend = $("chatSend");
@@ -456,6 +458,9 @@ const voice = new VoiceController({
 // controller never sends system prompts or prior turns from the browser.
 const chatDock = new ChatDockController({
   dock: chatDockRoot,
+  anchor: chatAnchor,
+  resizeHandle: chatResizeHandle,
+  headHotzone: hotzone,
   form: chatForm,
   input: chatInput,
   sendButton: chatSend,
@@ -2607,6 +2612,9 @@ function setView(view) {
   }
 
   if (view !== "iso") updateNearbyInteraction();
+  if (view === "robot") {
+    window.requestAnimationFrame(() => chatDock.refreshLayout());
+  }
   updateActionAvailability();
   updateHud();
   updateHudVisibility();

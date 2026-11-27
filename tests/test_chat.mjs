@@ -4,11 +4,21 @@ import { readFileSync } from "node:fs";
 
 import {
   CHAT_ENDPOINT,
+  CHAT_HEIGHT_STORAGE_KEY,
   CHAT_MAX_LENGTH,
+  CHAT_MIN_HEIGHT,
   ChatClient,
+  chatHeightLimit,
+  clampChatHeight,
+  clearChatHeight,
   createChatMessageElement,
+  defaultChatLogHeight,
+  isChatLogNearBottom,
   parseChatResponse,
+  readChatHeight,
+  resizeChatHeight,
   validateChatText,
+  writeChatHeight,
 } from "../static/chat.js";
 
 
@@ -261,14 +271,86 @@ test("fallback rendering carries an explicit label", () => {
 });
 
 
+test("dragging up/down resizes within min and max bounds", () => {
+  assert.equal(resizeChatHeight(190, 100, 60, CHAT_MIN_HEIGHT, 320), 230);
+  assert.equal(resizeChatHeight(190, 100, 150, CHAT_MIN_HEIGHT, 320), 140);
+  assert.equal(resizeChatHeight(190, 100, -500, CHAT_MIN_HEIGHT, 320), 320);
+  assert.equal(resizeChatHeight(190, 100, 500, CHAT_MIN_HEIGHT, 320), CHAT_MIN_HEIGHT);
+  assert.equal(clampChatHeight(500, CHAT_MIN_HEIGHT, 320), 320);
+  assert.equal(clampChatHeight(1, CHAT_MIN_HEIGHT, 320), CHAT_MIN_HEIGHT);
+});
+
+
+test("default chat height adapts to desktop, phone and short viewports", () => {
+  assert.equal(defaultChatLogHeight(1280, 900), 190);
+  assert.equal(defaultChatLogHeight(390, 780), 160);
+  assert.equal(defaultChatLogHeight(390, 600), 140);
+  assert.equal(defaultChatLogHeight(1280, 600), 140);
+});
+
+
+test("height limit respects the robot head and viewport ceiling", () => {
+  assert.equal(chatHeightLimit({
+    dockBottom: 700,
+    headBottom: 300,
+    nonLogHeight: 120,
+    viewportHeight: 800,
+  }), 272);
+  assert.equal(chatHeightLimit({
+    dockBottom: 2000,
+    headBottom: 0,
+    nonLogHeight: 100,
+    viewportHeight: 500,
+  }), 275);
+});
+
+
+test("height preference persists without any chat text", () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => (values.has(key) ? values.get(key) : null),
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+  writeChatHeight(storage, 245);
+  assert.equal(readChatHeight(storage), 245);
+  assert.equal(values.size, 1);
+  assert.equal(values.has(CHAT_HEIGHT_STORAGE_KEY), true);
+  assert.equal([...values.values()].join("").includes("聊天"), false);
+  clearChatHeight(storage);
+  assert.equal(values.size, 0);
+  assert.equal(readChatHeight(storage), null);
+});
+
+
+test("auto-scroll is only allowed when the reader is near the bottom", () => {
+  assert.equal(isChatLogNearBottom({
+    scrollHeight: 1000,
+    scrollTop: 600,
+    clientHeight: 400,
+  }), true);
+  assert.equal(isChatLogNearBottom({
+    scrollHeight: 1000,
+    scrollTop: 500,
+    clientHeight: 400,
+  }), false);
+  assert.equal(isChatLogNearBottom({
+    scrollHeight: 1000,
+    scrollTop: 570,
+    clientHeight: 400,
+  }), true);
+});
+
+
 test("page has a non-overlapping chat dock and the existing views remain", () => {
   const html = readFileSync(
     new URL("../templates/index.html", import.meta.url),
     "utf8",
   );
   for (const id of [
-    "chatDock", "chatForm", "chatInput", "chatSend", "chatLog",
-    "chatLogToggle", "chatCounter", "chatStatus",
+    "chatDock", "chatAnchor", "chatResizeHandle", "chatForm",
+    "chatInput", "chatSend", "chatLog", "chatLogToggle",
+    "chatCounter", "chatStatus",
   ]) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
@@ -285,13 +367,28 @@ test("page has a non-overlapping chat dock and the existing views remain", () =>
   assert.match(html, /id="world25d"/);
   assert.match(html, /id="design3d"/);
   assert.match(html, /id="chatInput"[^>]*maxlength="500"/);
+  assert.match(html, /id="chatResizeHandle"[^>]*role="separator"/s);
   const css = readFileSync(
     new URL("../static/style.css", import.meta.url),
     "utf8",
   );
-  assert.match(css, /body\[data-view="iso"\] \.chat-dock/);
-  assert.match(css, /body\[data-view="3d"\] \.chat-dock/);
+  assert.match(css, /body\[data-view="iso"\] \.chat-anchor/);
+  assert.match(css, /body\[data-view="3d"\] \.chat-anchor/);
   assert.match(css, /\.chat-input\s*\{/);
+  assert.match(css, /\.chat-resize-handle\s*\{/);
+  assert.match(css, /cursor: ns-resize/);
+  assert.match(css, /touch-action: none/);
+  assert.match(css, /body\.chat-resizing/);
+  assert.match(css, /height: 190px/);
+  const source = readFileSync(
+    new URL("../static/chat.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /pointerdown/);
+  assert.match(source, /pointermove/);
+  assert.match(source, /setPointerCapture/);
+  assert.match(source, /dblclick/);
+  assert.match(source, /ArrowUp/);
 });
 
 
@@ -304,5 +401,5 @@ test("chat module is independent of touch and TTS", () => {
   assert.equal(source.includes("/api/tts"), false);
   assert.equal(/innerHTML\s*=/.test(source), false);
   assert.equal(source.includes("speechSynthesis"), false);
-  assert.equal(source.includes("localStorage"), false);
+  assert.equal(source.includes("CHAT_HEIGHT_STORAGE_KEY"), true);
 });

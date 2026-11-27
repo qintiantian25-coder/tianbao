@@ -10,6 +10,95 @@
 export const CHAT_ENDPOINT = "/api/companion/chat";
 export const CHAT_MAX_LENGTH = 500;
 export const CHAT_TIMEOUT_MS = 60000;
+export const CHAT_HEIGHT_STORAGE_KEY = "tianbao.chatLogHeight.v1";
+export const CHAT_MIN_HEIGHT = 84;
+export const CHAT_HEIGHT_STEP = 24;
+
+export function defaultChatLogHeight(viewportWidth, viewportHeight) {
+  const width = Number(viewportWidth) || 0;
+  const height = Number(viewportHeight) || 0;
+  if (height > 0 && height <= 640) return 140;
+  if (width <= 760) return 160;
+  return 190;
+}
+
+export function clampChatHeight(value, minHeight = CHAT_MIN_HEIGHT, maxHeight = value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return minHeight;
+  return Math.min(Math.max(numeric, minHeight), Math.max(minHeight, maxHeight));
+}
+
+export function resizeChatHeight(startHeight, startY, currentY, minHeight, maxHeight) {
+  const delta = Number(startY) - Number(currentY);
+  return clampChatHeight(
+    Number(startHeight) + delta,
+    minHeight,
+    maxHeight,
+  );
+}
+
+export function chatHeightLimit({
+  dockBottom,
+  headBottom,
+  nonLogHeight,
+  viewportHeight,
+  minHeight = CHAT_MIN_HEIGHT,
+}) {
+  const safeBottom = Number(dockBottom);
+  const safeHead = Number(headBottom);
+  const safeNonLog = Math.max(0, Number(nonLogHeight) || 0);
+  const available = Number.isFinite(safeBottom) && Number.isFinite(safeHead)
+    ? safeBottom - (safeHead + 8) - safeNonLog
+    : 0;
+  const viewportCap = Math.max(
+    minHeight,
+    Math.floor((Number(viewportHeight) || 0) * 0.55),
+  );
+  return Math.max(minHeight, Math.min(available, viewportCap));
+}
+
+export function isChatLogNearBottom(
+  { scrollHeight, scrollTop, clientHeight },
+  threshold = 32,
+) {
+  const height = Number(scrollHeight) || 0;
+  const top = Number(scrollTop) || 0;
+  const visible = Number(clientHeight) || 0;
+  return height - top - visible <= threshold;
+}
+
+
+export function clearChatHeight(storage) {
+  try {
+    storage?.removeItem(CHAT_HEIGHT_STORAGE_KEY);
+  } catch {
+    // Storage may be unavailable; the in-page height still resets.
+  }
+}
+
+export function readChatHeight(storage) {
+  try {
+    const raw = storage && storage.getItem(CHAT_HEIGHT_STORAGE_KEY);
+    if (raw === null || raw === undefined) return null;
+    const height = Number(raw);
+    return Number.isFinite(height) && height >= CHAT_MIN_HEIGHT
+      ? height
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeChatHeight(storage, height) {
+  try {
+    if (!storage) return;
+    const value = Number(height);
+    if (!Number.isFinite(value)) return;
+    storage.setItem(CHAT_HEIGHT_STORAGE_KEY, String(Math.round(value)));
+  } catch {
+    // Storage can be blocked; resizing still works for this page.
+  }
+}
 
 const TENDENCY_LABEL = {
   gentle: "温柔",
@@ -268,6 +357,7 @@ export function createChatMessageElement(doc, message) {
 export class ChatDockController {
   constructor({
     dock,
+    anchor = null,
     form,
     input,
     sendButton,
@@ -277,10 +367,15 @@ export class ChatDockController {
     logCount,
     status,
     counter,
+    resizeHandle = null,
+    headHotzone = null,
     client = new ChatClient(),
-    documentRef = document,
+    documentRef = globalThis.document,
+    windowRef = globalThis,
+    storage = null,
   }) {
     this.dock = dock;
+    this.anchor = anchor;
     this.form = form;
     this.input = input;
     this.sendButton = sendButton;
@@ -290,12 +385,39 @@ export class ChatDockController {
     this.logCount = logCount;
     this.status = status;
     this.counter = counter;
+    this.resizeHandle = resizeHandle;
+    this.headHotzone = headHotzone;
     this.client = client;
     this.document = documentRef;
+    this.window = windowRef;
+    this.storage = storage;
+    if (!this.storage) {
+      try {
+        this.storage = windowRef?.localStorage || null;
+      } catch {
+        this.storage = null;
+      }
+    }
     this.busy = false;
     this.mounted = false;
     this.composing = false;
     this.messageCount = 0;
+    this.currentHeight = null;
+    this.minHeight = CHAT_MIN_HEIGHT;
+    this.maxHeight = defaultChatLogHeight(
+      this.window?.innerWidth,
+      this.window?.innerHeight,
+    );
+    this.compactHeight = 0;
+    this.dragState = null;
+    this._onViewportChange = this.refreshLayout.bind(this);
+    this._onPointerDown = this.onHandlePointerDown.bind(this);
+    this._onPointerMove = this.onHandlePointerMove.bind(this);
+    this._onPointerUp = this.onHandlePointerUp.bind(this);
+    this._onPointerCancel = this.onHandlePointerCancel.bind(this);
+    this._onLostPointerCapture = this.onLostPointerCapture.bind(this);
+    this._onHandleKeyDown = this.onHandleKeyDown.bind(this);
+    this._onHandleDoubleClick = this.onHandleDoubleClick.bind(this);
   }
 
   mount() {
@@ -314,6 +436,30 @@ export class ChatDockController {
       this.composing = false;
     });
     this.logToggle?.addEventListener("click", () => this.toggleLog());
+    this.input.addEventListener("focus", () => this.keepComposerVisible());
+
+    this.resizeHandle?.addEventListener("pointerdown", this._onPointerDown);
+    this.resizeHandle?.addEventListener("pointermove", this._onPointerMove);
+    this.resizeHandle?.addEventListener("pointerup", this._onPointerUp);
+    this.resizeHandle?.addEventListener(
+      "pointercancel", this._onPointerCancel,
+    );
+    this.resizeHandle?.addEventListener(
+      "lostpointercapture", this._onLostPointerCapture,
+    );
+    this.resizeHandle?.addEventListener("keydown", this._onHandleKeyDown);
+    this.resizeHandle?.addEventListener(
+      "dblclick", this._onHandleDoubleClick,
+    );
+
+    this.window?.addEventListener("resize", this._onViewportChange);
+    this.window?.visualViewport?.addEventListener(
+      "resize", this._onViewportChange,
+    );
+
+    this.currentHeight = readChatHeight(this.storage)
+      ?? this.defaultHeightForViewport();
+    this.refreshLayout();
     this.updateCounter();
     this.autoResize();
   }
@@ -356,11 +502,11 @@ export class ChatDockController {
       role: "user",
       label: "你",
       text: validation.text,
-    });
+    }, { forceScroll: true });
     this.input.value = "";
     this.updateCounter();
     this.autoResize();
-    const thinking = this.appendThinking();
+    const thinking = this.appendThinking({ forceScroll: true });
     this.setStatus("阗宝正在想...", "busy");
 
     let result;
@@ -413,31 +559,35 @@ export class ChatDockController {
     this.setStatus("阗宝回复了。", "ok");
   }
 
-  appendMessage(message) {
+  appendMessage(message, { forceScroll = false } = {}) {
     if (!this.log) return null;
+    const shouldStick = forceScroll || this.isNearBottom();
     if (this.emptyState) this.emptyState.hidden = true;
     const element = createChatMessageElement(this.document, message);
     this.log.appendChild(element);
     this.messageCount += 1;
     if (this.logCount) this.logCount.textContent = String(this.messageCount);
-    this.scrollToBottom();
+    if (shouldStick) this.scrollToBottom();
     return element;
   }
 
-  appendThinking() {
+  appendThinking({ forceScroll = false } = {}) {
     if (!this.log) return null;
+    const shouldStick = forceScroll || this.isNearBottom();
     const element = this.document.createElement("div");
     element.className = "chat-thinking";
     element.setAttribute("role", "status");
     element.textContent = "阗宝正在想...";
     this.log.appendChild(element);
-    this.scrollToBottom();
+    if (shouldStick) this.scrollToBottom();
     return element;
   }
 
   openLog() {
     if (!this.log) return;
     this.log.hidden = false;
+    this.refreshLayout();
+    this.applyHeight(this.currentHeight, { persist: false });
     this.logToggle?.setAttribute("aria-expanded", "true");
     this.dock?.classList.add("is-log-open");
     this.scrollToBottom();
@@ -454,6 +604,164 @@ export class ChatDockController {
     if (!this.log) return;
     if (this.log.hidden) this.openLog();
     else this.closeLog();
+  }
+
+  isNearBottom(threshold = 32) {
+    if (!this.log || this.log.hidden) return true;
+    return isChatLogNearBottom(this.log, threshold);
+  }
+
+  defaultHeightForViewport() {
+    return defaultChatLogHeight(
+      this.window?.innerWidth,
+      this.window?.innerHeight,
+    );
+  }
+
+  refreshLayout() {
+    if (!this.dock || this.dock.offsetParent === null) return;
+    const logHeight = this.log && !this.log.hidden
+      ? this.log.offsetHeight
+      : 0;
+    const compactHeight = Math.max(0, this.dock.offsetHeight - logHeight);
+    this.compactHeight = compactHeight;
+    if (this.anchor) this.anchor.style.height = `${compactHeight + 10}px`;
+
+    const dockRect = this.dock.getBoundingClientRect();
+    const headRect = this.headHotzone?.getBoundingClientRect();
+    const viewportHeight = this.window?.visualViewport?.height
+      || this.window?.innerHeight
+      || 0;
+    this.maxHeight = chatHeightLimit({
+      dockBottom: dockRect.bottom,
+      headBottom: headRect?.bottom,
+      nonLogHeight: compactHeight,
+      viewportHeight,
+      minHeight: CHAT_MIN_HEIGHT,
+    });
+    this.minHeight = Math.min(CHAT_MIN_HEIGHT, this.maxHeight);
+    this.applyHeight(this.currentHeight, { persist: false });
+  }
+
+  applyHeight(height, { persist = false, scroll = true } = {}) {
+    if (!this.log) return;
+    const next = clampChatHeight(height, this.minHeight, this.maxHeight);
+    const wasAtBottom = this.isNearBottom();
+    this.currentHeight = next;
+    this.log.style.height = `${next}px`;
+    this.log.style.maxHeight = "none";
+    this.syncHandle();
+    if (scroll && !this.log.hidden && wasAtBottom) this.scrollToBottom();
+    if (persist) writeChatHeight(this.storage, next);
+  }
+
+  syncHandle() {
+    if (!this.resizeHandle) return;
+    this.resizeHandle.setAttribute(
+      "aria-valuemin", String(Math.round(this.minHeight)),
+    );
+    this.resizeHandle.setAttribute(
+      "aria-valuemax", String(Math.round(this.maxHeight)),
+    );
+    this.resizeHandle.setAttribute(
+      "aria-valuenow", String(Math.round(this.currentHeight || 0)),
+    );
+  }
+
+  resetHeight() {
+    this.applyHeight(this.defaultHeightForViewport(), { persist: false });
+    clearChatHeight(this.storage);
+    this.setStatus("聊天记录高度已恢复默认。", "ok");
+  }
+
+  onHandlePointerDown(event) {
+    if (!this.resizeHandle || !this.log) return;
+    if (event.isPrimary === false) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
+    this.resizeHandle.setPointerCapture?.(event.pointerId);
+    this.openLog();
+    this.refreshLayout();
+    this.dragState = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight: this.currentHeight,
+    };
+    this.dock?.classList.add("is-resizing");
+    this.document?.body?.classList.add("chat-resizing");
+  }
+
+  onHandlePointerMove(event) {
+    const state = this.dragState;
+    if (!state || state.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const next = resizeChatHeight(
+      state.startHeight,
+      state.startY,
+      event.clientY,
+      this.minHeight,
+      this.maxHeight,
+    );
+    this.applyHeight(next, { persist: false });
+  }
+
+  onHandlePointerUp(event) {
+    if (!this.dragState || event.pointerId !== this.dragState.pointerId) return;
+    this.finishResize(event.pointerId);
+  }
+
+  onHandlePointerCancel(event) {
+    if (!this.dragState || event.pointerId !== this.dragState.pointerId) return;
+    this.finishResize(event.pointerId);
+  }
+
+  onLostPointerCapture(event) {
+    if (!this.dragState || event.pointerId !== this.dragState.pointerId) return;
+    this.finishResize(event.pointerId);
+  }
+
+  finishResize(pointerId) {
+    this.dragState = null;
+    try {
+      this.resizeHandle?.releasePointerCapture?.(pointerId);
+    } catch {
+      // Capture may already have been released by pointercancel.
+    }
+    this.dock?.classList.remove("is-resizing");
+    this.document?.body?.classList.remove("chat-resizing");
+    writeChatHeight(this.storage, this.currentHeight);
+  }
+
+  onHandleKeyDown(event) {
+    if (!this.resizeHandle) return;
+    const delta = event.key === "ArrowUp" || event.key === "PageUp"
+      ? CHAT_HEIGHT_STEP * (event.key === "PageUp" ? 3 : 1)
+      : event.key === "ArrowDown" || event.key === "PageDown"
+        ? -CHAT_HEIGHT_STEP * (event.key === "PageDown" ? 3 : 1)
+        : 0;
+    if (!delta) return;
+    event.preventDefault();
+    this.openLog();
+    this.refreshLayout();
+    this.applyHeight(
+      (this.currentHeight || this.defaultHeightForViewport()) + delta,
+      { persist: true },
+    );
+  }
+
+  onHandleDoubleClick(event) {
+    event.preventDefault();
+    this.openLog();
+    this.refreshLayout();
+    this.resetHeight();
+  }
+
+  keepComposerVisible() {
+    if (!this.window?.matchMedia) return;
+    if (!this.window.matchMedia("(max-width: 760px)").matches) return;
+    this.window.setTimeout(() => {
+      this.dock?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    }, 280);
   }
 
   setBusyUI(busy) {
